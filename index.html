@@ -1,0 +1,213 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Складской поиск + Сканер</title>
+    <!-- Подключаем библиотеку для работы с камерой и QR-кодами -->
+    <script src="https://unpkg.com"></script>
+    <style>
+        * { box-sizing: border-box; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+        body { background-color: #f4f7f6; margin: 0; padding: 15px; display: flex; flex-direction: column; align-items: center; }
+        .container { width: 100%; max-width: 450px; background: white; padding: 20px; border-radius: 12px; box-shadow: 0 4px 10px rgba(0,0,0,0.05); }
+        h2 { margin-top: 0; color: #1c1c1e; font-size: 20px; text-align: center; }
+        label { display: block; margin-bottom: 8px; font-weight: 600; color: #3a3a3c; font-size: 14px; }
+        
+        .scan-btn { width: 100%; padding: 14px; background-color: #34c759; border: none; border-radius: 8px; color: white; font-size: 16px; font-weight: bold; cursor: pointer; margin-bottom: 15px; display: flex; align-items: center; justify-content: center; gap: 8px; }
+        .scan-btn:active { background-color: #248a3d; }
+        #reader { width: 100%; border-radius: 8px; overflow: hidden; margin-bottom: 15px; display: none; background: #000; }
+        
+        .divider { text-align: center; color: #8e8e93; font-size: 12px; margin: 10px 0 15px 0; position: relative; }
+        .divider::before, .divider::after { content: ""; position: absolute; top: 50%; width: 40%; height: 1px; background: #e5e5ea; }
+        .divider::before { left: 0; } .divider::after { right: 0; }
+
+        input { width: 100%; padding: 14px; border: 1px solid #c7c7cc; border-radius: 8px; font-size: 18px; margin-bottom: 15px; outline: none; text-align: center; letter-spacing: 2px; }
+        input:focus { border-color: #007aff; }
+        .search-btn { width: 100%; padding: 14px; background-color: #007aff; border: none; border-radius: 8px; color: white; font-size: 16px; font-weight: bold; cursor: pointer; }
+        .search-btn:active { background-color: #0056b3; }
+        
+        .result-card { margin-top: 20px; padding: 15px; border-radius: 8px; background-color: #f8f9fa; border-left: 5px solid #007aff; display: none; }
+        .result-item { margin-bottom: 10px; font-size: 15px; color: #2c3e50; }
+        .result-item strong { color: #7f8c8d; font-size: 11px; display: block; text-transform: uppercase; letter-spacing: 0.5px; }
+        .target-address { font-size: 16px; color: #007aff; font-weight: bold; }
+        
+        .analogs-section { margin-top: 20px; display: none; width: 100%; }
+        .analogs-title { font-size: 14px; font-weight: bold; color: #3a3a3c; margin-bottom: 10px; text-transform: uppercase; letter-spacing: 0.5px; }
+        .analog-row { background: #f1f3f5; padding: 10px; border-radius: 6px; margin-bottom: 8px; font-size: 14px; display: grid; grid-template-columns: 1fr 1fr; gap: 5px; border-left: 3px solid #636366; }
+        .analog-address { font-weight: bold; color: #1c1c1e; }
+        .analog-qty { text-align: right; font-weight: bold; color: #248a3d; }
+        .analog-meta { grid-column: span 2; font-size: 12px; color: #636366; border-top: 1px dashed #d1d1d6; padding-top: 4px; margin-top: 4px; }
+        
+        .error { color: #ff3b30; background: #ffe5e5; padding: 12px; border-radius: 8px; margin-top: 15px; display: none; text-align: center; font-size: 14px; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h2>🔎 Складской поиск</h2>
+    
+    <button class="scan-btn" id="toggleScanBtn" onclick="toggleScanner()">📷 Включить сканер</button>
+    <div id="reader"></div>
+
+    <div class="divider">или введите вручную</div>
+
+    <input type="text" id="addressInput" placeholder="1012 или 1-01-2" autocomplete="off">
+    <button class="search-btn" onclick="searchAddress()">Найти данные</button>
+
+    <div id="errorBlock" class="error"></div>
+
+    <!-- Основной результат -->
+    <div id="resultCard" class="result-card">
+        <div class="result-item"><strong>Запрошенный адрес:</strong> <span id="resTargetAddress" class="target-address">-</span></div>
+        <div class="result-item"><strong>Наименование продукции:</strong> <span id="resTitle" style="font-weight: 500;">-</span></div>
+        <div class="result-item"><strong>Назначение:</strong> <span id="resPurpose">-</span></div>
+        <div class="result-item"><strong>Количество здесь:</strong> <span id="resQty">-</span></div>
+        <div class="result-item"><strong>Партия:</strong> <span id="resBatch">-</span></div>
+        <div class="result-item"><strong>Дата производства:</strong> <span id="resDate">-</span></div>
+    </div>
+
+    <!-- Аналоги -->
+    <div id="analogsSection" class="analogs-section">
+        <div class="analogs-title">Также этот товар лежит в ячейках:</div>
+        <div id="analogsList"></div>
+    </div>
+</div>
+<script>
+    // === НАСТРОЙКИ SUPABASE (ПОДСТАВЬТЕ СВОИ ДАННЫЕ) ===
+    const SUPABASE_URL = "https://qxpnzaokqdctnfiqrrvx.supabase.co";
+    const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InF4cG56YW9rcWRjdG5maXFycnZ4Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTA0MzA1OTAsImV4cCI6MjEwNjAwNjU5MH0.F8Or6x0QaghtTd4I_CZZA1LkXkgGYrbDraDmudQCEAc";
+    // ==================================================
+
+    let html5QrcodeScanner = null;
+
+    function toggleScanner() {
+        const readerDiv = document.getElementById('reader');
+        const btn = document.getElementById('toggleScanBtn');
+        
+        if (!html5QrcodeScanner) {
+            readerDiv.style.display = 'block';
+            btn.innerText = "🛑 Остановить сканер";
+            btn.style.backgroundColor = "#ff3b30";
+            
+            html5QrcodeScanner = new Html5Qrcode("reader");
+            html5QrcodeScanner.start(
+                { facingMode: "environment" }, 
+                { fps: 10, qrbox: { width: 250, height: 250 } },
+                (qrText) => {
+                    document.getElementById('addressInput').value = qrText;
+                    toggleScanner(); 
+                    searchAddress(); 
+                },
+                (errorMessage) => { }
+            ).catch(err => {
+                showError("Ошибка доступа к камере: " + err);
+                toggleScanner();
+            });
+        } else {
+            html5QrcodeScanner.stop().then(() => {
+                html5QrcodeScanner = null;
+                readerDiv.style.display = 'none';
+                btn.innerText = "📷 Включить сканер";
+                btn.style.backgroundColor = "#34c759";
+            });
+        }
+    }
+
+    async function searchAddress() {
+        let addressValue = document.getElementById('addressInput').value.trim();
+        const resultCard = document.getElementById('resultCard');
+        const analogsSection = document.getElementById('analogsSection');
+        const analogsList = document.getElementById('analogsList');
+        const errorBlock = document.getElementById('errorBlock');
+        
+        resultCard.style.display = 'none';
+        analogsSection.style.display = 'none';
+        errorBlock.style.display = 'none';
+        analogsList.innerHTML = '';
+
+        if (!addressValue) {
+            showError("Пожалуйста, введите или отсканируйте адрес");
+            return;
+        }
+
+        let cleanAddress = addressValue.replace(/-/g, '');
+        if (cleanAddress.length >= 3 && !addressValue.includes('-')) {
+            const firstSign = cleanAddress.charAt(0);
+            const lastSign = cleanAddress.charAt(cleanAddress.length - 1);
+            const middlePart = cleanAddress.substring(1, cleanAddress.length - 1);
+            addressValue = `${firstSign}-${middlePart}-${lastSign}`;
+        }
+
+        const targetUrl = `${SUPABASE_URL}/rest/v1/test_products?address=eq.${encodeURIComponent(addressValue)}`;
+
+        try {
+            const response = await fetch(targetUrl, {
+                method: 'GET',
+                headers: {
+                    'apikey': SUPABASE_KEY,
+                    'Authorization': `Bearer ${SUPABASE_KEY}`,
+                    'Content-Type': 'application/json'
+                }
+            });
+
+            if (!response.ok) throw new Error(`Ошибка сервера: ${response.status}`);
+            const targetData = await response.json();
+
+            if (targetData.length === 0) {
+                showError(`Ячейка ${addressValue} пуста или не существует.`);
+                return;
+            }
+
+            const targetItem = targetData[0];
+            const productTitle = targetItem.title;
+
+            document.getElementById('resTargetAddress').innerText = addressValue;
+            document.getElementById('resTitle').innerText = productTitle || '—';
+            document.getElementById('resPurpose').innerText = targetItem.purpose || '—';
+            document.getElementById('resQty').innerText = targetItem.quantity !== null ? `${targetItem.quantity} шт.` : '—';
+            document.getElementById('resBatch').innerText = targetItem.batch || '—';
+            document.getElementById('resDate').innerText = targetItem.production_date || '—';
+            resultCard.style.display = 'block';
+
+            if (!productTitle) return;
+
+            const analogsUrl = `${SUPABASE_URL}/rest/v1/test_products?title=eq.${encodeURIComponent(productTitle)}&address=neq.${encodeURIComponent(addressValue)}&order=address.asc`;
+            const responseAnalogs = await fetch(analogsUrl, {
+                method: 'GET',
+                headers: {
+                    'apikey': SUPABASE_KEY,
+                    'Authorization': `Bearer ${SUPABASE_KEY}`,
+                    'Content-Type': 'application/json'
+                }
+            });
+
+            if (!responseAnalogs.ok) throw new Error(`Ошибка аналогов: ${responseAnalogs.status}`);
+            const analogsData = await responseAnalogs.json();
+
+            if (analogsData.length > 0) {
+                analogsData.forEach(analog => {
+                    const rowHtml = `
+                        <div class="analog-row">
+                            <div class="analog-address">📍 Ячейка: ${analog.address}</div>
+                            <div class="analog-qty">${analog.quantity !== null ? analog.quantity : 0} шт.</div>
+                            <div class="analog-meta">Партия: ${analog.batch || '—'} | Дата: ${analog.production_date || '—'}</div>
+                        </div>
+                    `;
+                    analogsList.innerHTML += rowHtml;
+                });
+                analogsSection.style.display = 'block';
+            }
+
+        } catch (error) {
+            showError(`Ошибка: ${error.message}`);
+        }
+    }
+
+    function showError(text) {
+        const errorBlock = document.getElementById('errorBlock');
+        errorBlock.innerText = text;
+        errorBlock.style.display = 'block';
+    }
+</script>
+</body>
+</html>
