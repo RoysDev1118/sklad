@@ -28,6 +28,10 @@
         .result-item strong { color: #7f8c8d; font-size: 11px; display: block; text-transform: uppercase; letter-spacing: 0.5px; }
         .target-address { font-size: 16px; color: #007aff; font-weight: bold; }
         
+        /* Стили для красивой подсветки артикула */
+        .sku-badge { background-color: #e5e5ea; color: #3a3a3c; padding: 2px 6px; border-radius: 4px; font-size: 13px; font-weight: 600; }
+        .sku-none { color: #8e8e93; font-style: italic; }
+
         .analogs-section { margin-top: 20px; display: none; width: 100%; }
         .analogs-title { font-size: 14px; font-weight: bold; color: #3a3a3c; margin-bottom: 10px; text-transform: uppercase; letter-spacing: 0.5px; }
         .analog-row { background: #f1f3f5; padding: 10px; border-radius: 6px; margin-bottom: 8px; font-size: 14px; display: grid; grid-template-columns: 1fr 1fr; gap: 5px; border-left: 3px solid #636366; }
@@ -41,7 +45,7 @@
 <body>
 
 <div class="container">
-    <h2>🔎 Складской поиск+</h2>
+    <h2>🔎 Складской поиск</h2>
     
     <button class="scan-btn" id="toggleScanBtn" onclick="toggleScanner()">📷 Включить сканер</button>
     <div id="videoContainer">
@@ -57,6 +61,7 @@
 
     <div id="resultCard" class="result-card">
         <div class="result-item"><strong>Запрошенный адрес:</strong> <span id="resTargetAddress" class="target-address">-</span></div>
+        <div class="result-item"><strong>Артикул:</strong> <span id="resSku">-</span></div>
         <div class="result-item"><strong>Наименование продукции:</strong> <span id="resTitle" style="font-weight: 500;">-</span></div>
         <div class="result-item"><strong>Назначение:</strong> <span id="resPurpose">-</span></div>
         <div class="result-item"><strong>Количество здесь:</strong> <span id="resQty">-</span></div>
@@ -69,6 +74,7 @@
         <div id="analogsList"></div>
     </div>
 </div>
+// ==================================================
 <script>
         // === НАСТРОЙКИ SUPABASE (ПОДСТАВЬТЕ СВОИ ДАННЫЕ) ===
     const SUPABASE_URL = "https://qxpnzaokqdctnfiqrrvx.supabase.co";
@@ -85,7 +91,6 @@
         errorBlock.style.display = 'none';
 
         if (!videoStream) {
-            // Включаем видеопоток стандартными средствами браузера
             try {
                 videoContainer.style.display = 'block';
                 btn.innerText = "🛑 Остановить сканер";
@@ -99,7 +104,6 @@
                 video.srcObject = videoStream;
                 await video.play();
 
-                // Проверяем встроенную поддержку сканера в Яндекс/Chrome
                 if (!window.BarcodeDetector) {
                     showError("Встроенный сканер не поддерживается. Обновите браузер или используйте ручной ввод.");
                     return;
@@ -107,18 +111,16 @@
 
                 const barcodeDetector = new BarcodeDetector({ formats: ['qr_code'] });
 
-                // Запускаем цикл проверки кадров видеопотока
                 scanInterval = setInterval(async () => {
                     if (video.readyState === video.HAVE_ENOUGH_DATA) {
                         try {
                             const barcodes = await barcodeDetector.detect(video);
                             if (barcodes.length > 0) {
-                                // QR-код успешно пойман!
                                 document.getElementById('addressInput').value = barcodes[0].rawValue;
                                 stopCamera();
                                 searchAddress();
                             }
-                        } catch (e) { /* Игнорируем мелкие ошибки фокуса */ }
+                        } catch (e) { }
                     }
                 }, 300);
 
@@ -184,7 +186,8 @@
             if (!response.ok) throw new Error(`Ошибка сервера: ${response.status}`);
             const targetData = await response.json();
 
-            if (targetData.length === 0) {
+            // Если такой ячейки вообще нет в ответе, или её наименование пустое
+            if (targetData.length === 0 || !targetData[0].title || targetData[0].title.trim() === "") {
                 showError(`Ячейка ${addressValue} пуста.`);
                 return;
             }
@@ -192,16 +195,27 @@
             const targetItem = targetData[0];
             const productTitle = targetItem.title;
 
+            // Логика вывода Артикула (sku)
+            let skuHtml = '';
+            if (!targetItem.sku || targetItem.sku === '0' || targetItem.sku.trim() === '') {
+                skuHtml = '<span class="sku-none">без артикула</span>';
+            } else {
+                skuHtml = `<span class="sku-badge">${targetItem.sku}</span>`;
+            }
+
+            // Динамический вывод Единиц Измерения (unit) из базы
+            const displayUnit = targetItem.unit ? targetItem.unit : 'шт.';
+
             document.getElementById('resTargetAddress').innerText = addressValue;
-            document.getElementById('resTitle').innerText = productTitle || '—';
+            document.getElementById('resSku').innerHTML = skuHtml;
+            document.getElementById('resTitle').innerText = productTitle;
             document.getElementById('resPurpose').innerText = targetItem.purpose || '—';
-            document.getElementById('resQty').innerText = targetItem.quantity !== null ? `${targetItem.quantity} шт.` : '—';
+            document.getElementById('resQty').innerText = targetItem.quantity !== null ? `${targetItem.quantity} ${displayUnit}` : '—';
             document.getElementById('resBatch').innerText = targetItem.batch || '—';
             document.getElementById('resDate').innerText = targetItem.production_date || '—';
             resultCard.style.display = 'block';
 
-            if (!productTitle) return;
-
+            // Ищем аналоги по точному совпадению наименования
             const responseAnalogs = await fetch(`${SUPABASE_URL}/rest/v1/test_products?title=eq.${encodeURIComponent(productTitle)}&address=neq.${encodeURIComponent(addressValue)}&order=address.asc`, {
                 headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}` }
             });
@@ -209,11 +223,19 @@
 
             if (analogsData.length > 0) {
                 analogsData.forEach(analog => {
+                    const analogUnit = analog.unit ? analog.unit : 'шт.';
+                    let analogSkuHtml = '';
+                    if (!analog.sku || analog.sku === '0' || analog.sku.trim() === '') {
+                        analogSkuHtml = '<span class="sku-none" style="font-size:11px;">без арт.</span>';
+                    } else {
+                        analogSkuHtml = `<span class="sku-badge" style="font-size:11px; padding:1px 4px;">Арт: ${analog.sku}</span>`;
+                    }
+
                     analogsList.innerHTML += `
                         <div class="analog-row">
                             <div class="analog-address">📍 Ячейка: ${analog.address}</div>
-                            <div class="analog-qty">${analog.quantity !== null ? analog.quantity : 0} шт.</div>
-                            <div class="analog-meta">Партия: ${analog.batch || '—'} | Дата: ${analog.production_date || '—'}</div>
+                            <div class="analog-qty">${analog.quantity !== null ? analog.quantity : 0} ${analogUnit}</div>
+                            <div class="analog-meta">Партия: ${analog.batch || '—'} | Дата: ${analog.production_date || '—'} | ${analogSkuHtml}</div>
                         </div>
                     `;
                 });
