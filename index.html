@@ -9,7 +9,6 @@
         body { background-color: #f4f7f6; margin: 0; padding: 15px; display: flex; flex-direction: column; align-items: center; }
         .container { width: 100%; max-width: 450px; background: white; padding: 20px; border-radius: 12px; box-shadow: 0 4px 10px rgba(0,0,0,0.05); position: relative; }
         h2 { margin-top: 0; color: #1c1c1e; font-size: 20px; text-align: center; }
-        label { display: block; margin-bottom: 8px; font-weight: 600; color: #3a3a3c; font-size: 14px; }
         
         .scan-btn { width: 100%; padding: 14px; background-color: #34c759; border: none; border-radius: 8px; color: white; font-size: 16px; font-weight: bold; cursor: pointer; margin-bottom: 15px; display: flex; align-items: center; justify-content: center; gap: 8px; }
         #videoContainer { width: 100%; border-radius: 8px; overflow: hidden; margin-bottom: 15px; display: none; background: #000; position: relative; height: 280px; }
@@ -23,10 +22,17 @@
         input:focus { border-color: #007aff; }
         .search-btn { width: 100%; padding: 14px; background-color: #007aff; border: none; border-radius: 8px; color: white; font-size: 16px; font-weight: bold; cursor: pointer; }
         
-        .result-card { margin-top: 20px; padding: 15px; border-radius: 8px; background-color: #f8f9fa; border-left: 5px solid #007aff; display: none; }
+        /* Заголовок ячейки над карточками */
+        .address-header { margin-top: 20px; font-size: 18px; color: #1c1c1e; font-weight: bold; text-align: center; display: none; }
+        .address-header span { color: #007aff; }
+
+        /* Стили карточек товаров внутри ячейки */
+        .result-card { margin-top: 12px; padding: 15px; border-radius: 8px; background-color: #f8f9fa; border-left: 5px solid #007aff; }
+        /* Если это сборная позиция СБХран+, подсветим её оранжевым */
+        .result-card.multi-item { border-left-color: #ff9500; }
+        
         .result-item { margin-bottom: 10px; font-size: 15px; color: #2c3e50; }
         .result-item strong { color: #7f8c8d; font-size: 11px; display: block; text-transform: uppercase; letter-spacing: 0.5px; }
-        .target-address { font-size: 16px; color: #007aff; font-weight: bold; }
         
         .sku-badge { background-color: #e5e5ea; color: #3a3a3c; padding: 2px 6px; border-radius: 4px; font-size: 13px; font-weight: 600; }
         .sku-none { color: #8e8e93; font-style: italic; }
@@ -39,8 +45,6 @@
         .analog-meta { grid-column: span 2; font-size: 12px; color: #636366; border-top: 1px dashed #d1d1d6; padding-top: 4px; margin-top: 4px; }
         
         .error { color: #ff3b30; background: #ffe5e5; padding: 12px; border-radius: 8px; margin-top: 15px; display: none; text-align: center; font-size: 14px; }
-        
-        /* Стиль для метки версии в самом низу приложения */
         .version-tag { text-align: center; font-size: 11px; color: #c7c7cc; margin-top: 25px; font-weight: 500; letter-spacing: 0.5px; text-transform: lowercase; }
     </style>
 </head>
@@ -61,27 +65,22 @@
 
     <div id="errorBlock" class="error"></div>
 
-    <div id="resultCard" class="result-card">
-        <div class="result-item"><strong>Запрошенный адрес:</strong> <span id="resTargetAddress" class="target-address">-</span></div>
-        <div class="result-item"><strong>Артикул:</strong> <span id="resSku">-</span></div>
-        <div class="result-item"><strong>Наименование продукции:</strong> <span id="resTitle" style="font-weight: 500;">-</span></div>
-        <div class="result-item"><strong>Назначение:</strong> <span id="resPurpose">-</span></div>
-        <div class="result-item"><strong>Количество здесь:</strong> <span id="resQty">-</span></div>
-        <div class="result-item"><strong>Партия:</strong> <span id="resBatch">-</span></div>
-        <div class="result-item"><strong>Дата производства:</strong> <span id="resDate">-</span></div>
-    </div>
+    <!-- Заголовок с адресом текущей ячейки -->
+    <div id="addressHeader" class="address-header">Ячейка: <span id="targetAddressTitle">-</span></div>
+    
+    <!-- Контейнер для динамических карточек товаров -->
+    <div id="productsContainer"></div>
 
     <div id="analogsSection" class="analogs-section">
         <div class="analogs-title">Также этот товар лежит в ячейках:</div>
         <div id="analogsList"></div>
     </div>
 
-    <!-- Метка текущей сборки кода -->
-    <div class="version-tag">сборка: 1.0.1 (от 19.10.2026)</div>
+    <div class="version-tag">сборка: 1.1.0 (сборные ячейки)</div>
 </div>
-// ==================================================
 <script>
-        // === НАСТРОЙКИ SUPABASE (ПОДСТАВЬТЕ СВОИ ДАННЫЕ) ===
+    // ==================================================
+    // === НАСТРОЙКИ SUPABASE (ПОДСТАВЬТЕ СВОИ ДАННЫЕ) ===
     const SUPABASE_URL = "https://qxpnzaokqdctnfiqrrvx.supabase.co";
     const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InF4cG56YW9rcWRjdG5maXFycnZ4Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTA0MzA1OTAsImV4cCI6MjEwNjAwNjU5MH0.F8Or6x0QaghtTd4I_CZZA1LkXkgGYrbDraDmudQCEAc";
     // ==================================================
@@ -92,8 +91,7 @@
         const videoContainer = document.getElementById('videoContainer');
         const video = document.getElementById('webcamVideo');
         const btn = document.getElementById('toggleScanBtn');
-        const errorBlock = document.getElementById('errorBlock');
-        errorBlock.style.display = 'none';
+        document.getElementById('errorBlock').style.display = 'none';
 
         if (!videoStream) {
             try {
@@ -143,15 +141,8 @@
         const video = document.getElementById('webcamVideo');
         const btn = document.getElementById('toggleScanBtn');
 
-        if (scanInterval) {
-            clearInterval(scanInterval);
-            scanInterval = null;
-        }
-
-        if (videoStream) {
-            videoStream.getTracks().forEach(track => track.stop());
-            videoStream = null;
-        }
+        if (scanInterval) { clearInterval(scanInterval); scanInterval = null; }
+        if (videoStream) { videoStream.getTracks().forEach(track => track.stop()); videoStream = null; }
 
         video.srcObject = null;
         videoContainer.style.display = 'none';
@@ -161,14 +152,15 @@
 
     async function searchAddress() {
         let addressValue = document.getElementById('addressInput').value.trim();
-        const resultCard = document.getElementById('resultCard');
+        const addressHeader = document.getElementById('addressHeader');
+        const productsContainer = document.getElementById('productsContainer');
         const analogsSection = document.getElementById('analogsSection');
         const analogsList = document.getElementById('analogsList');
-        const errorBlock = document.getElementById('errorBlock');
         
-        resultCard.style.display = 'none';
+        addressHeader.style.display = 'none';
+        productsContainer.innerHTML = '';
         analogsSection.style.display = 'none';
-        errorBlock.style.display = 'none';
+        document.getElementById('errorBlock').style.display = 'none';
         analogsList.innerHTML = '';
 
         if (!addressValue) {
@@ -176,7 +168,7 @@
             return;
         }
 
-        // Авто-дефисы для ручного ввода
+        // Авто-дефисы для ручного ввода ячейки
         let cleanAddress = addressValue.replace(/-/g, '');
         if (cleanAddress.length >= 3 && !addressValue.includes('-')) {
             const firstSign = cleanAddress.charAt(0);
@@ -192,37 +184,54 @@
             if (!response.ok) throw new Error(`Ошибка сервера: ${response.status}`);
             const targetData = await response.json();
 
-            // Исправлено чтение: targetData — это массив. Берем первый элемент targetData[0]
-            if (targetData.length === 0 || !targetData[0].title || targetData[0].title.trim() === "") {
+            // Если ячейка пустая или все записи в ней содержат пустые наименования
+            const validItems = targetData.filter(item => item.title && item.title.trim() !== "");
+            if (validItems.length === 0) {
                 showError(`Ячейка ${addressValue} пуста.`);
                 return;
             }
 
-            const targetItem = targetData[0];
-            const productTitle = targetItem.title;
+            // Показываем общий заголовок ячейки
+            document.getElementById('targetAddressTitle').innerText = addressValue;
+            addressHeader.style.display = 'block';
 
-            // Логика вывода Артикула (sku)
-            let skuHtml = '';
-            if (!targetItem.sku || targetItem.sku === '0' || targetItem.sku.trim() === '') {
-                skuHtml = '<span class="sku-none">без артикула</span>';
-            } else {
-                skuHtml = `<span class="sku-badge">${targetItem.sku}</span>`;
+            // Проверяем, сборная ли ячейка (больше 1 товара)
+            const isMultiItem = validItems.length > 1;
+
+            // Выводим карточки товаров
+            validItems.forEach(targetItem => {
+                let skuHtml = '';
+                if (!targetItem.sku || targetItem.sku === '0' || targetItem.sku.trim() === '') {
+                    skuHtml = '<span class="sku-none">без артикула</span>';
+                } else {
+                    skuHtml = `<span class="sku-badge">${targetItem.sku}</span>`;
+                }
+
+                const displayUnit = targetItem.unit ? targetItem.unit : 'шт.';
+                
+                // Класс подсветки для СБХран+ или в целом сборных позиций
+                const cardClass = (isMultiItem || targetItem.purpose === 'СБХран+') ? 'result-card multi-item' : 'result-card';
+
+                productsContainer.innerHTML += `
+                    <div class="${cardClass}">
+                        <div class="result-item"><strong>Артикул:</strong> ${skuHtml}</div>
+                        <div class="result-item"><strong>Наименование продукции:</strong> <span style="font-weight: 500;">${targetItem.title}</span></div>
+                        <div class="result-item"><strong>Назначение:</strong> <span>${targetItem.purpose || '—'}</span></div>
+                        <div class="result-item"><strong>Количество здесь:</strong> <span>${targetItem.quantity !== null ? targetItem.quantity : 0} ${displayUnit}</span></div>
+                        <div class="result-item"><strong>Партия:</strong> <span>${targetItem.batch || '—'}</span></div>
+                        <div class="result-item"><strong>Дата производства:</strong> <span>${targetItem.production_date || '—'}</span></div>
+                    </div>
+                `;
+            });
+
+            // Если ячейка сборная, блокируем вывод аналогов, как договаривались
+            if (isMultiItem) {
+                return; 
             }
 
-            // Динамический вывод Единиц Измерения (unit) из базы
-            const displayUnit = targetItem.unit ? targetItem.unit : 'шт.';
-
-            document.getElementById('resTargetAddress').innerText = addressValue;
-            document.getElementById('resSku').innerHTML = skuHtml;
-            document.getElementById('resTitle').innerText = productTitle;
-            document.getElementById('resPurpose').innerText = targetItem.purpose || '—';
-            document.getElementById('resQty').innerText = targetItem.quantity !== null ? `${targetItem.quantity} ${displayUnit}` : '—';
-            document.getElementById('resBatch').innerText = targetItem.batch || '—';
-            document.getElementById('resDate').innerText = targetItem.production_date || '—';
-            resultCard.style.display = 'block';
-
-            // Ищем аналоги по точному совпадению наименования товара
-            const responseAnalogs = await fetch(`${SUPABASE_URL}/rest/v1/test_products?title=eq.${encodeURIComponent(productTitle)}&address=neq.${encodeURIComponent(addressValue)}&order=address.asc`, {
+            // Если товар один, ищем его аналоги по складу
+            const singleProductTitle = validItems[0].title;
+            const responseAnalogs = await fetch(`${SUPABASE_URL}/rest/v1/test_products?title=eq.${encodeURIComponent(singleProductTitle)}&address=neq.${encodeURIComponent(addressValue)}&order=address.asc`, {
                 headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}` }
             });
             const analogsData = await responseAnalogs.json();
