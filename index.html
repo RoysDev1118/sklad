@@ -149,7 +149,6 @@
         btn.innerText = "📷 Включить сканер";
         btn.style.backgroundColor = "#34c759";
     }
-
     async function searchAddress() {
         let addressValue = document.getElementById('addressInput').value.trim();
         const addressHeader = document.getElementById('addressHeader');
@@ -231,12 +230,28 @@
 
             // Если товар один, ищем его аналоги по складу
             const singleProductTitle = validItems[0].title;
-            const responseAnalogs = await fetch(`${SUPABASE_URL}/rest/v1/test_products?title=eq.${encodeURIComponent(singleProductTitle)}&address=neq.${encodeURIComponent(addressValue)}&order=address.asc`, {
+            const responseAnalogs = await fetch(`${SUPABASE_URL}/rest/v1/test_products?title=eq.${encodeURIComponent(singleProductTitle)}&address=neq.${encodeURIComponent(addressValue)}`, {
                 headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}` }
             });
             const analogsData = await responseAnalogs.json();
 
             if (analogsData.length > 0) {
+                // СОРТИРОВКА АНАЛОГОВ: 1. По дате (FIFO) -> 2. По количеству (минимум) [1]
+                analogsData.sort((a, b) => {
+                    // Пустые даты отправляем в самый конец списка [1]
+                    const dateA = a.production_date ? new Date(a.production_date).getTime() : Infinity;
+                    const dateB = b.production_date ? new Date(b.production_date).getTime() : Infinity;
+
+                    if (dateA !== dateB) {
+                        return dateA - dateB; // Ранние даты будут первыми [1]
+                    }
+
+                    // Если даты одинаковые, сортируем по количеству (меньшее вперед) [1]
+                    const qtyA = a.quantity !== null ? a.quantity : 0;
+                    const qtyB = b.quantity !== null ? b.quantity : 0;
+                    return qtyA - qtyB;
+                });
+
                 analogsData.forEach(analog => {
                     const analogUnit = analog.unit ? analog.unit : 'шт.';
                     let analogSkuHtml = '';
