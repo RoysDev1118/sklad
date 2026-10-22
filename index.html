@@ -52,6 +52,16 @@
 
 <div class="container">
     <h2>🔎 Складской поиск+</h2>
+
+ <!-- БЛОК АВТОРИЗАЦИИ КЛАДОВЩИКА -->
+    <div id="authBlock" style="background: #e5e5ea; padding: 12px; border-radius: 8px; margin-bottom: 15px; display: flex; flex-direction: column; gap: 8px;">
+        <div style="font-size: 12px; font-weight: bold; color: #3a3a3c; text-transform: uppercase;">👤 Авторизация сотрудника</div>
+        <div style="display: flex; gap: 8px;">
+            <input type="text" id="pickerNameInput" placeholder="Имя (4 буквы)" max-length="10" style="margin-bottom: 0; padding: 8px; font-size: 15px; letter-spacing: 0; text-align: left;">
+            <button onclick="loginPicker()" style="padding: 8px 15px; background: #5856d6; color: white; border: none; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 14px;">Войти</button>
+        </div>
+        <div id="authStatus" style="font-size: 13px; color: #636366; font-weight: 500;">Режим: 👀 Только просмотр</div>
+    </div>
     
     <button class="scan-btn" id="toggleScanBtn" onclick="toggleScanner()">📷 Включить сканер</button>
     <div id="videoContainer">
@@ -76,7 +86,7 @@
         <div id="analogsList"></div>
     </div>
 
-    <div class="version-tag">сборка: 1.1.0 (сборные ячейки)</div>
+    <div class="version-tag">сборка: 1.3.0 (сборные ячейки)</div>
 </div>
 <script>
     // ==================================================
@@ -84,9 +94,48 @@
     const SUPABASE_URL = "https://qxpnzaokqdctnfiqrrvx.supabase.co";
     const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InF4cG56YW9rcWRjdG5maXFycnZ4Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTA0MzA1OTAsImV4cCI6MjEwNjAwNjU5MH0.F8Or6x0QaghtTd4I_CZZA1LkXkgGYrbDraDmudQCEAc";
     // ==================================================
-     let videoStream = null;
+    let videoStream = null;
     let scanInterval = null;
+ let currentPicker = null; // Хранит имя авторизованного кладовщика (4 буквы)
 
+    // Функция авторизации
+    async function loginPicker() {
+        let nameInput = document.getElementById('pickerNameInput').value.trim();
+        const statusDiv = document.getElementById('authStatus');
+        document.getElementById('errorBlock').style.display = 'none';
+
+        if (!nameInput) {
+            statusDiv.innerHTML = "Режим: 👀 Только просмотр";
+            statusDiv.style.color = "#636366";
+            currentPicker = null;
+            return;
+        }
+
+        // Приводим к формату: Первая заглавная, остальные строчные (например, вова -> Вова, roys -> Roys)
+        let formattedName = nameInput.charAt(0).toUpperCase() + nameInput.slice(1).toLowerCase();
+
+        try {
+            // Проверяем имя в таблице allowed_pickers в Supabase
+            const response = await fetch(`${SUPABASE_URL}/rest/v1/allowed_pickers?name=eq.${encodeURIComponent(formattedName)}`, {
+                headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}` }
+            });
+            const data = await response.json();
+
+            if (data.length > 0) {
+                currentPicker = data[0].name;
+                statusDiv.innerHTML = `✅ Доступ разрешен: <strong>${currentPicker}</strong> (Списания открыты)`;
+                statusDiv.style.color = "#248a3d";
+                document.getElementById('pickerNameInput').value = currentPicker;
+            } else {
+                currentPicker = null;
+                statusDiv.innerHTML = "❌ Имя не найдено в списке. Режим: 👀 Только просмотр";
+                statusDiv.style.color = "#ff3b30";
+            }
+        } catch (err) {
+            showError("Ошибка проверки пользователя: " + err.message);
+        }
+    }
+ // ==================================================
     async function toggleScanner() {
         const videoContainer = document.getElementById('videoContainer');
         const video = document.getElementById('webcamVideo');
@@ -264,7 +313,7 @@
     }
 
     // ==================================================
-    // === ИСПОЛНИТЕЛЬ СЦЕНАРИЯ 2: ГИБРИДНЫЙ ПОИСК (УРОВЕНЬ СТЕЛЛАЖА) ===
+ // === ИСПОЛНИТЕЛЬ СЦЕНАРИЯ 2: ГИБРИДНЫЙ ПОИСК (УРОВЕНЬ СТЕЛЛАЖА) ===
     async function executeHybridSearch(dbSearchMask, originalInput) {
         const addressHeader = document.getElementById('addressHeader');
         const productsContainer = document.getElementById('productsContainer');
@@ -282,27 +331,54 @@
                 return;
             }
 
-            validItems.sort((a, b) => a.address.localeCompare(b.address));
+            // Группируем товары по ячейкам для выявления миксов
+            const cellsMap = {};
+            validItems.forEach(item => {
+                if (!cellsMap[item.address]) {
+                    cellsMap[item.address] = [];
+                }
+                cellsMap[item.address].push(item);
+            });
+
+            // Получаем уникальные адреса и сортируем их по порядку
+            const sortedAddresses = Object.keys(cellsMap).sort((a, b) => a.localeCompare(b));
 
             document.getElementById('targetAddressTitle').innerText = originalInput.toUpperCase();
             addressHeader.style.display = 'block';
 
-            validItems.forEach(item => {
-                let skuHtml = item.sku && item.sku !== '0' && item.sku.trim() !== '' 
-                    ? `<span class="sku-badge">${item.sku}</span>` 
-                    : '<span class="sku-none">без артикула</span>';
+            sortedAddresses.forEach(addr => {
+                const itemsInCell = cellsMap[addr];
+                // Ячейка сборная, если в ней > 1 товара или хотя бы у одного назначение СБХран+
+                const isMix = itemsInCell.length > 1 || itemsInCell.some(i => i.purpose === 'СБХран+');
 
-                const displayUnit = item.unit ? item.unit : 'шт.';
+                if (isMix) {
+                    // Оранжевая карточка для микс-палета
+                    productsContainer.innerHTML += `
+                        <div class="result-card multi-item" style="border-left-color: #ff9500; background-color: #fff9f0;">
+                            <div class="result-item" style="font-size: 16px; color: #ff9500;"><strong>📍 Адрес хранения:</strong> <span style="font-weight: bold;">${addr}</span></div>
+                            <div class="result-item" style="font-weight: bold; color: #d97706; margin-top: 5px;">⚠️ СБОРНЫЙ МИКС-ПАЛЕТ (СБХран)</div>
+                            <div class="result-item" style="font-size: 12px; color: #7f8c8d;">Состав скрыт. Для просмотра отсканируйте ячейку напрямую.</div>
+                        </div>
+                    `;
+                } else {
+                    // Обычная карточка для моно-палета
+                    const item = itemsInCell[0];
+                    let skuHtml = item.sku && item.sku !== '0' && item.sku.trim() !== '' 
+                        ? `<span class="sku-badge">${item.sku}</span>` 
+                        : '<span class="sku-none">без артикула</span>';
 
-                productsContainer.innerHTML += `
-                    <div class="result-card" style="border-left-color: #34c759;">
-                        <div class="result-item" style="font-size: 16px; color: #34c759;"><strong>📍 Адрес хранения:</strong> <span>${item.address}</span></div>
-                        <div class="result-item"><strong>Артикул:</strong> ${skuHtml}</div>
-                        <div class="result-item"><strong>Наименование продукции:</strong> <span style="font-weight: 500;">${item.title}</span></div>
-                        <div class="result-item"><strong>Количество:</strong> <span>${item.quantity !== null ? item.quantity : 0} ${displayUnit}</span></div>
-                        <div class="result-item"><strong>Дата производства:</strong> <span>${item.production_date || '—'}</span></div>
-                    </div>
-                `;
+                    const displayUnit = item.unit ? item.unit : 'шт.';
+
+                    productsContainer.innerHTML += `
+                        <div class="result-card" style="border-left-color: #34c759;">
+                            <div class="result-item" style="font-size: 16px; color: #34c759;"><strong>📍 Адрес хранения:</strong> <span>${item.address}</span></div>
+                            <div class="result-item"><strong>Артикул:</strong> ${skuHtml}</div>
+                            <div class="result-item"><strong>Наименование продукции:</strong> <span style="font-weight: 500;">${item.title}</span></div>
+                            <div class="result-item"><strong>Количество:</strong> <span>${item.quantity !== null ? item.quantity : 0} ${displayUnit}</span></div>
+                            <div class="result-item"><strong>Дата производства:</strong> <span>${item.production_date || '—'}</span></div>
+                        </div>
+                    `;
+                }
             });
 
         } catch (error) { showError(`Ошибка гибридного поиска: ${error.message}`); }
