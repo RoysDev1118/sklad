@@ -84,7 +84,7 @@
     const SUPABASE_URL = "https://qxpnzaokqdctnfiqrrvx.supabase.co";
     const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InF4cG56YW9rcWRjdG5maXFycnZ4Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTA0MzA1OTAsImV4cCI6MjEwNjAwNjU5MH0.F8Or6x0QaghtTd4I_CZZA1LkXkgGYrbDraDmudQCEAc";
     // ==================================================
-    let videoStream = null;
+     let videoStream = null;
     let scanInterval = null;
 
     async function toggleScanner() {
@@ -108,7 +108,7 @@
                 await video.play();
 
                 if (!window.BarcodeDetector) {
-                    showError("Встроенный сканер не поддерживается. Обновите браузер или используйте ручной ввод.");
+                    showError("Встроенный сканер не поддерживается. Используйте ручной ввод.");
                     return;
                 }
 
@@ -149,32 +149,59 @@
         btn.innerText = "📷 Включить сканер";
         btn.style.backgroundColor = "#34c759";
     }
+
+    // ГЛАВНЫЙ ДИСПЕТЧЕР ПОИСКА
     async function searchAddress() {
-        let addressValue = document.getElementById('addressInput').value.trim();
+        let inputValue = document.getElementById('addressInput').value.trim();
+        
+        // Очищаем экраны перед новым поиском
+        document.getElementById('addressHeader').style.display = 'none';
+        document.getElementById('productsContainer').innerHTML = '';
+        document.getElementById('analogsSection').style.display = 'none';
+        document.getElementById('analogsList').innerHTML = '';
+        document.getElementById('errorBlock').style.display = 'none';
+
+        if (!inputValue) {
+            showError("Пожалуйста, введите или отсканируйте данные");
+            return;
+        }
+
+        // СЦЕНАРИЙ 1: Поиск по АРТИКУЛУ (метка #)
+        if (inputValue.startsWith('#')) {
+            const cleanSku = inputValue.substring(1).trim();
+            if (!cleanSku) { showError("Артикул после # не может быть пустым"); return; }
+            await executeSkuSearch(cleanSku);
+            return;
+        }
+
+        // Предобработка ввода для ячеек и гибридов (авто-дефисы, если ввели слитно, например 2хх5 или 10015)
+        if (!inputValue.includes('-')) {
+            let clean = inputValue.toLowerCase();
+            if (clean.length === 4) { // формат 2хх5 -> 2-хх-5 или 1012 -> 1-01-2
+                inputValue = `${clean.charAt(0)}-${clean.substring(1,3)}-${clean.charAt(3)}`;
+            } else if (clean.length === 5) { // формат 10хх5 -> 10-хх-5 или 10015 -> 10-01-5
+                inputValue = `${clean.substring(0,2)}-${clean.substring(2,4)}-${clean.charAt(4)}`;
+            }
+        }
+
+        // СЦЕНАРИЙ 2: ГИБРИДНЫЙ ПОИСК (маска содержит "хх")
+        if (inputValue.toLowerCase().includes('хх') || inputValue.includes('xx')) {
+            // Приводим русское "х" и английское "x" к общему виду для Supabase
+            const dbSearchMask = inputValue.toLowerCase().replace(/x/g, '%').replace(/х/g, '%');
+            await executeHybridSearch(dbSearchMask, inputValue);
+            return;
+        }
+
+        // СЦЕНАРИЙ 3: ОБЫЧНЫЙ ПОИСК КОНКРЕТНОЙ ЯЧЕЙКИ (текущий рабочий режим)
+        await executeCellSearch(inputValue);
+    }
+    // ==================================================
+    // === ИСПОЛНИТЕЛЬ СЦЕНАРИЯ 3: ПОИСК КОНКРЕТНОЙ ЯЧЕЙКИ ===
+    async function executeCellSearch(addressValue) {
         const addressHeader = document.getElementById('addressHeader');
         const productsContainer = document.getElementById('productsContainer');
         const analogsSection = document.getElementById('analogsSection');
         const analogsList = document.getElementById('analogsList');
-        
-        addressHeader.style.display = 'none';
-        productsContainer.innerHTML = '';
-        analogsSection.style.display = 'none';
-        document.getElementById('errorBlock').style.display = 'none';
-        analogsList.innerHTML = '';
-
-        if (!addressValue) {
-            showError("Пожалуйста, введите или отсканируйте адрес");
-            return;
-        }
-
-        // Авто-дефисы для ручного ввода ячейки
-        let cleanAddress = addressValue.replace(/-/g, '');
-        if (cleanAddress.length >= 3 && !addressValue.includes('-')) {
-            const firstSign = cleanAddress.charAt(0);
-            const lastSign = cleanAddress.charAt(cleanAddress.length - 1);
-            const middlePart = cleanAddress.substring(1, cleanAddress.length - 1);
-            addressValue = `${firstSign}-${middlePart}-${lastSign}`;
-        }
 
         try {
             const response = await fetch(`${SUPABASE_URL}/rest/v1/test_products?address=eq.${encodeURIComponent(addressValue)}`, {
@@ -183,32 +210,23 @@
             if (!response.ok) throw new Error(`Ошибка сервера: ${response.status}`);
             const targetData = await response.json();
 
-            // Если ячейка пустая или все записи в ней содержат пустые наименования
             const validItems = targetData.filter(item => item.title && item.title.trim() !== "");
             if (validItems.length === 0) {
                 showError(`Ячейка ${addressValue} пуста.`);
                 return;
             }
 
-            // Показываем общий заголовок ячейки
             document.getElementById('targetAddressTitle').innerText = addressValue;
             addressHeader.style.display = 'block';
 
-            // Проверяем, сборная ли ячейка (больше 1 товара)
             const isMultiItem = validItems.length > 1;
 
-            // Выводим карточки товаров
             validItems.forEach(targetItem => {
-                let skuHtml = '';
-                if (!targetItem.sku || targetItem.sku === '0' || targetItem.sku.trim() === '') {
-                    skuHtml = '<span class="sku-none">без артикула</span>';
-                } else {
-                    skuHtml = `<span class="sku-badge">${targetItem.sku}</span>`;
-                }
+                let skuHtml = targetItem.sku && targetItem.sku !== '0' && targetItem.sku.trim() !== '' 
+                    ? `<span class="sku-badge">${targetItem.sku}</span>` 
+                    : '<span class="sku-none">без артикула</span>';
 
                 const displayUnit = targetItem.unit ? targetItem.unit : 'шт.';
-                
-                // Класс подсветки для СБХран+ или в целом сборных позиций
                 const cardClass = (isMultiItem || targetItem.purpose === 'СБХран+') ? 'result-card multi-item' : 'result-card';
 
                 productsContainer.innerHTML += `
@@ -223,12 +241,8 @@
                 `;
             });
 
-            // Если ячейка сборная, блокируем вывод аналогов, как договаривались
-            if (isMultiItem) {
-                return; 
-            }
+            if (isMultiItem) return; 
 
-            // Если товар один, ищем его аналоги по складу
             const singleProductTitle = validItems[0].title;
             const responseAnalogs = await fetch(`${SUPABASE_URL}/rest/v1/test_products?title=eq.${encodeURIComponent(singleProductTitle)}&address=neq.${encodeURIComponent(addressValue)}`, {
                 headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}` }
@@ -236,45 +250,138 @@
             const analogsData = await responseAnalogs.json();
 
             if (analogsData.length > 0) {
-                // СОРТИРОВКА АНАЛОГОВ: 1. По дате (FIFO) -> 2. По количеству (минимум) [1]
                 analogsData.sort((a, b) => {
-                    // Пустые даты отправляем в самый конец списка [1]
                     const dateA = a.production_date ? new Date(a.production_date).getTime() : Infinity;
                     const dateB = b.production_date ? new Date(b.production_date).getTime() : Infinity;
-
-                    if (dateA !== dateB) {
-                        return dateA - dateB; // Ранние даты будут первыми [1]
-                    }
-
-                    // Если даты одинаковые, сортируем по количеству (меньшее вперед) [1]
-                    const qtyA = a.quantity !== null ? a.quantity : 0;
-                    const qtyB = b.quantity !== null ? b.quantity : 0;
-                    return qtyA - qtyB;
+                    if (dateA !== dateB) return dateA - dateB;
+                    return (a.quantity !== null ? a.quantity : 0) - (b.quantity !== null ? b.quantity : 0);
                 });
 
-                analogsData.forEach(analog => {
-                    const analogUnit = analog.unit ? analog.unit : 'шт.';
-                    let analogSkuHtml = '';
-                    if (!analog.sku || analog.sku === '0' || analog.sku.trim() === '') {
-                        analogSkuHtml = '<span class="sku-none" style="font-size:11px;">без арт.</span>';
-                    } else {
-                        analogSkuHtml = `<span class="sku-badge" style="font-size:11px; padding:1px 4px;">Арт: ${analog.sku}</span>`;
-                    }
-
-                    analogsList.innerHTML += `
-                        <div class="analog-row">
-                            <div class="analog-address">📍 Ячейка: ${analog.address}</div>
-                            <div class="analog-qty">${analog.quantity !== null ? analog.quantity : 0} ${analogUnit}</div>
-                            <div class="analog-meta">Партия: ${analog.batch || '—'} | Дата: ${analog.production_date || '—'} | ${analogSkuHtml}</div>
-                        </div>
-                    `;
-                });
-                analogsSection.style.display = 'block';
+                renderAnalogsList(analogsData);
             }
 
-        } catch (error) {
-            showError(`Ошибка: ${error.message}`);
-        }
+        } catch (error) { showError(`Ошибка: ${error.message}`); }
+    }
+
+    // ==================================================
+    // === ИСПОЛНИТЕЛЬ СЦЕНАРИЯ 2: ГИБРИДНЫЙ ПОИСК (УРОВЕНЬ СТЕЛЛАЖА) ===
+    async function executeHybridSearch(dbSearchMask, originalInput) {
+        const addressHeader = document.getElementById('addressHeader');
+        const productsContainer = document.getElementById('productsContainer');
+
+        try {
+            const response = await fetch(`${SUPABASE_URL}/rest/v1/test_products?address=like.${encodeURIComponent(dbSearchMask)}`, {
+                headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}` }
+            });
+            if (!response.ok) throw new Error(`Ошибка сервера: ${response.status}`);
+            const data = await response.json();
+
+            const validItems = data.filter(item => item.title && item.title.trim() !== "");
+            if (validItems.length === 0) {
+                showError(`На уровне стеллажа по запросу "${originalInput}" товаров не найдено.`);
+                return;
+            }
+
+            validItems.sort((a, b) => a.address.localeCompare(b.address));
+
+            document.getElementById('targetAddressTitle').innerText = originalInput.toUpperCase();
+            addressHeader.style.display = 'block';
+
+            validItems.forEach(item => {
+                let skuHtml = item.sku && item.sku !== '0' && item.sku.trim() !== '' 
+                    ? `<span class="sku-badge">${item.sku}</span>` 
+                    : '<span class="sku-none">без артикула</span>';
+
+                const displayUnit = item.unit ? item.unit : 'шт.';
+
+                productsContainer.innerHTML += `
+                    <div class="result-card" style="border-left-color: #34c759;">
+                        <div class="result-item" style="font-size: 16px; color: #34c759;"><strong>📍 Адрес хранения:</strong> <span>${item.address}</span></div>
+                        <div class="result-item"><strong>Артикул:</strong> ${skuHtml}</div>
+                        <div class="result-item"><strong>Наименование продукции:</strong> <span style="font-weight: 500;">${item.title}</span></div>
+                        <div class="result-item"><strong>Количество:</strong> <span>${item.quantity !== null ? item.quantity : 0} ${displayUnit}</span></div>
+                        <div class="result-item"><strong>Дата производства:</strong> <span>${item.production_date || '—'}</span></div>
+                    </div>
+                `;
+            });
+
+        } catch (error) { showError(`Ошибка гибридного поиска: ${error.message}`); }
+    }
+    // ==================================================
+    // === ИСПОЛНИТЕЛЬ СЦЕНАРИЯ 1: ПОИСК ПО АРТИКУЛУ SKU ===
+    async function executeSkuSearch(skuValue) {
+        const addressHeader = document.getElementById('addressHeader');
+        const productsContainer = document.getElementById('productsContainer');
+
+        try {
+            const response = await fetch(`${SUPABASE_URL}/rest/v1/test_products?sku=eq.${encodeURIComponent(skuValue)}`, {
+                headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}` }
+            });
+            if (!response.ok) throw new Error(`Ошибка сервера: ${response.status}`);
+            const data = await response.json();
+
+            const validItems = data.filter(item => item.title && item.title.trim() !== "");
+            if (validItems.length === 0) {
+                showError(`Товар с артикулом "${skuValue}" не найден в базе остатков.`);
+                return;
+            }
+
+            // Используем данные первой записи для формирования информационной карточки товара
+            const productInfo = validItems[0];
+            
+            document.getElementById('targetAddressTitle').innerText = `Арт: ${skuValue}`;
+            addressHeader.style.display = 'block';
+
+            // Выводим карточку-справку о самом товаре
+            productsContainer.innerHTML = `
+                <div class="result-card" style="border-left-color: #5856d6; background-color: #f0effb;">
+                    <div class="result-item"><strong style="color: #5856d6;">Найденный товар:</strong> <span style="font-weight: bold; font-size: 16px;">${productInfo.title}</span></div>
+                    <div class="result-item"><strong>Назначение (основное):</strong> <span>${productInfo.purpose || '—'}</span></div>
+                </div>
+            `;
+
+            // Сортируем все ячейки с этим артикулом по правилу FIFO + минимизация остатка
+            validItems.sort((a, b) => {
+                const dateA = a.production_date ? new Date(a.production_date).getTime() : Infinity;
+                const dateB = b.production_date ? new Date(b.production_date).getTime() : Infinity;
+                if (dateA !== dateB) return dateA - dateB;
+                return (a.quantity !== null ? a.quantity : 0) - (b.quantity !== null ? b.quantity : 0);
+            });
+
+            // Выводим список мест хранения в блок аналогов
+            renderAnalogsList(validItems);
+
+        } catch (error) { showError(`Ошибка поиска по артикулу: ${error.message}`); }
+    }
+
+    // Вспомогательная функция отрисовки строк местонахождения товара
+    function renderAnalogsList(arrayData) {
+        const analogsSection = document.getElementById('analogsSection');
+        const analogsList = document.getElementById('analogsList');
+        
+        analogsList.innerHTML = '';
+        
+        // Меняем заголовок секции в зависимости от контекста поиска
+        const isSkuSearch = document.getElementById('targetAddressTitle').innerText.includes('Арт:');
+        analogsSection.querySelector('.analogs-title').innerText = isSkuSearch 
+            ? "Адреса размещения товара на складе (Приоритет FIFO):" 
+            : "Также этот товар лежит в ячейках:";
+
+        arrayData.forEach(item => {
+            const unitStr = item.unit ? item.unit : 'шт.';
+            let skuBadgeHtml = item.sku && item.sku !== '0' && item.sku.trim() !== '' 
+                ? `<span class="sku-badge" style="font-size:11px; padding:1px 4px;">Арт: ${item.sku}</span>` 
+                : '<span class="sku-none" style="font-size:11px;">без арт.</span>';
+
+            analogsList.innerHTML += `
+                <div class="analog-row" style="${isSkuSearch ? 'border-left-color: #5856d6;' : ''}">
+                    <div class="analog-address">📍 Ячейка: ${item.address}</div>
+                    <div class="analog-qty">${item.quantity !== null ? item.quantity : 0} ${unitStr}</div>
+                    <div class="analog-meta">Партия: ${item.batch || '—'} | Дата: ${item.production_date || '—'} | ${skuBadgeHtml}</div>
+                </div>
+            `;
+        });
+        analogsSection.style.display = 'block';
     }
 
     function showError(text) {
