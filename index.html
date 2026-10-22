@@ -308,6 +308,7 @@
         } catch (error) { showError(`Ошибка гибридного поиска: ${error.message}`); }
     }
     // ==================================================
+    // ==================================================
     // === ИСПОЛНИТЕЛЬ СЦЕНАРИЯ 1: ПОИСК ПО АРТИКУЛУ SKU ===
     async function executeSkuSearch(skuValue) {
         const addressHeader = document.getElementById('addressHeader');
@@ -326,21 +327,19 @@
                 return;
             }
 
-            // Используем данные первой записи для формирования информационной карточки товара
             const productInfo = validItems[0];
             
             document.getElementById('targetAddressTitle').innerText = `Арт: ${skuValue}`;
             addressHeader.style.display = 'block';
 
-            // Выводим карточку-справку о самом товаре
+            // Выводим только карточку-справку о товаре БЕЗ НАЗНАЧЕНИЯ
             productsContainer.innerHTML = `
                 <div class="result-card" style="border-left-color: #5856d6; background-color: #f0effb;">
                     <div class="result-item"><strong style="color: #5856d6;">Найденный товар:</strong> <span style="font-weight: bold; font-size: 16px;">${productInfo.title}</span></div>
-                    <div class="result-item"><strong>Назначение (основное):</strong> <span>${productInfo.purpose || '—'}</span></div>
                 </div>
             `;
 
-            // Сортируем все ячейки с этим артикулом по правилу FIFO + минимизация остатка
+            // Сортируем все ячейки по правилу FIFO + минимизация остатка
             validItems.sort((a, b) => {
                 const dateA = a.production_date ? new Date(a.production_date).getTime() : Infinity;
                 const dateB = b.production_date ? new Date(b.production_date).getTime() : Infinity;
@@ -348,24 +347,50 @@
                 return (a.quantity !== null ? a.quantity : 0) - (b.quantity !== null ? b.quantity : 0);
             });
 
-            // Выводим список мест хранения в блок аналогов
-            renderAnalogsList(validItems);
+            // Запрашиваем информацию о сборных палетах, чтобы подсветить миксы
+            // Нам нужно знать, какие еще товары лежат в этих же ячейках
+            const cellAddresses = [...new Set(validItems.map(item => item.address))];
+            
+            // Передаем данные в обновленный рендеринг
+            await renderAnalogsListWithMixCheck(validItems, cellAddresses);
 
         } catch (error) { showError(`Ошибка поиска по артикулу: ${error.message}`); }
     }
 
-    // Вспомогательная функция отрисовки строк местонахождения товара
-    function renderAnalogsList(arrayData) {
+    // Обновленная функция отрисовки списка местонахождения товара с проверкой на микс-палеты
+    async function renderAnalogsListWithMixCheck(arrayData, cellAddresses) {
         const analogsSection = document.getElementById('analogsSection');
         const analogsList = document.getElementById('analogsList');
-        
         analogsList.innerHTML = '';
         
-        // Меняем заголовок секции в зависимости от контекста поиска
-        const isSkuSearch = document.getElementById('targetAddressTitle').innerText.includes('Арт:');
-        analogsSection.querySelector('.analogs-title').innerText = isSkuSearch 
-            ? "Адреса размещения товара на складе (Приоритет FIFO):" 
-            : "Также этот товар лежит в ячейках:";
+        analogsSection.querySelector('.analogs-title').innerText = "Адреса размещения товара на складе (Приоритет FIFO):";
+
+        // Запрашиваем из базы все товары в этих ячейках для проверки на сборность
+        let mixedCells = new Set();
+        if (cellAddresses.length > 0) {
+            try {
+                const formattedAddresses = cellAddresses.map(addr => `"${addr}"`).join(',');
+                const responseCells = await fetch(`${SUPABASE_URL}/rest/v1/test_products?address=in.(${encodeURIComponent(formattedAddresses)})`, {
+                    headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}` }
+                });
+                const allItemsInCells = await responseCells.json();
+                
+                // Считаем количество уникальных наименований в каждой ячейке
+                const cellCounts = {};
+                allItemsInCells.forEach(item => {
+                    if (item.title && item.title.trim() !== "") {
+                        cellCounts[item.address] = (cellCounts[item.address] || 0) + 1;
+                    }
+                });
+                
+                // Если товаров > 1 или назначение СБХран+, помечаем ячейку как миксованную
+                allItemsInCells.forEach(item => {
+                    if (cellCounts[item.address] > 1 || item.purpose === 'СБХран+') {
+                        mixedCells.add(item.address);
+                    }
+                });
+            } catch (e) { console.error("Ошибка проверки сборных ячеек:", e); }
+        }
 
         arrayData.forEach(item => {
             const unitStr = item.unit ? item.unit : 'шт.';
@@ -373,16 +398,27 @@
                 ? `<span class="sku-badge" style="font-size:11px; padding:1px 4px;">Арт: ${item.sku}</span>` 
                 : '<span class="sku-none" style="font-size:11px;">без арт.</span>';
 
+            // Проверяем, является ли палета сборной (микс)
+            const isMix = mixedCells.has(item.address);
+            // Если микс — красим границу в оранжевый, если обычный — в фиолетовый
+            const rowStyle = isMix 
+                ? 'border-left: 4px solid #ff9500; background: #fff9f0;' 
+                : 'border-left: 4px solid #5856d6;';
+
             analogsList.innerHTML += `
-                <div class="analog-row" style="${isSkuSearch ? 'border-left-color: #5856d6;' : ''}">
-                    <div class="analog-address">📍 Ячейка: ${item.address}</div>
+                <div class="analog-row" style="${rowStyle}">
+                    <div class="analog-address">📍 Ячейка: ${item.address} ${isMix ? '<span style="color:#ff9500; font-size:11px; font-weight:bold;">[СБОРНАЯ]</span>' : ''}</div>
                     <div class="analog-qty">${item.quantity !== null ? item.quantity : 0} ${unitStr}</div>
-                    <div class="analog-meta">Партия: ${item.batch || '—'} | Дата: ${item.production_date || '—'} | ${skuBadgeHtml}</div>
+                    <div class="analog-meta">
+                        Назначение: <span style="color:#1c1c1e; font-weight:500;">${item.purpose || '—'}</span><br>
+                        Партия: ${item.batch || '—'} | Дата: ${item.production_date || '—'} | ${skuBadgeHtml}
+                    </div>
                 </div>
             `;
         });
         analogsSection.style.display = 'block';
     }
+
 
     function showError(text) {
         const errorBlock = document.getElementById('errorBlock');
