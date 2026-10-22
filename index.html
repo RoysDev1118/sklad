@@ -51,7 +51,7 @@
 <body>
 
 <div class="container">
-    <h2>🔎 Складской поиск++</h2>
+    <h2>🔎 Складской поиск+</h2>
 
  <!-- БЛОК АВТОРИЗАЦИИ КЛАДОВЩИКА -->
     <div id="authBlock" style="background: #e5e5ea; padding: 12px; border-radius: 8px; margin-bottom: 15px; display: flex; flex-direction: column; gap: 8px;">
@@ -86,7 +86,7 @@
         <div id="analogsList"></div>
     </div>
 
-    <div class="version-tag">сборка: 1.4.0 (сборные ячейки, артикулы, выборки)</div>
+    <div class="version-tag">сборка: 1.3.1 (сборные ячейки)</div>
 </div>
 <script>
     // ==================================================
@@ -299,7 +299,7 @@ async function executeCellSearch(addressValue) {
                                     <input type="number" id="claimQty_${targetItem.id}" value="${itemQty}" min="1" max="${itemQty}" 
                                            style="width: 80px; margin-bottom: 0; padding: 8px; font-size: 15px; letter-spacing: 0; text-align: center;">
                                     <span style="font-size: 14px; color: #505050; font-weight: 500;">${displayUnit}</span>
-                                    <button onclick="createOrderClaim(${targetItem.id}, '${escapeHtml(targetItem.sku || '')}', '${escapeHtml(targetItem.title)}', '${escapeHtml(targetItem.address)}', '${displayUnit}', '${escapeHtml(targetItem.batch || '')}', '${targetItem.production_date || ''}')" 
+                                    <button onclick="createOrderClaim(${targetItem.id}, '${escapeHtml(targetItem.sku || '')}', '${escapeHtml(targetItem.title)}', '${escapeHtml(targetItem.address)}', '${escapeHtml(targetItem.purpose || '')}', '${displayUnit}', '${escapeHtml(targetItem.batch || '')}', '${targetItem.production_date || ''}')"  
                                             style="flex: 1; padding: 10px; background-color: #5856d6; color: white; border: none; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 14px;">
                                         Взять в работу
                                     </button>
@@ -457,7 +457,7 @@ async function executeCellSearch(addressValue) {
                 </div>
             `;
 
-            // Сортируем все ячейки по правилу FIFO + минимизация остатка
+            // Сортируем все ячейки по правилу FEFO + минимизация остатка
             validItems.sort((a, b) => {
                 const dateA = a.production_date ? new Date(a.production_date).getTime() : Infinity;
                 const dateB = b.production_date ? new Date(b.production_date).getTime() : Infinity;
@@ -475,7 +475,7 @@ async function executeCellSearch(addressValue) {
         } catch (error) { showError(`Ошибка поиска по артикулу: ${error.message}`); }
     }
 
-    // ФИНАЛЬНАЯ ИСПРАВЛЕННАЯ ФУНКЦИЯ ОТРИСОВКИ СБОРНЫХ ПАЛЕТ ПО ПОЛЮ «НАЗНАЧЕНИЕ»
+    // МОДИФИЦИРОВАННАЯ ФУНКЦИЯ: КНОПКИ «ЗАБРАТЬ» ДОСТУПНЫ В АНАЛОГАХ ПРИ ЛЮБОМ ПОИСКЕ
     async function renderAnalogsListWithMixCheck(arrayData, cellAddresses) {
         const analogsSection = document.getElementById('analogsSection');
         const analogsList = document.getElementById('analogsList');
@@ -492,7 +492,6 @@ async function executeCellSearch(addressValue) {
                 ? `<span class="sku-badge" style="font-size:11px; padding:1px 4px;">Арт: ${item.sku}</span>` 
                 : '<span class="sku-none" style="font-size:11px;">без арт.</span>';
 
-            // СБОРНАЯ ПАЛЕТА ОПРЕДЕЛЯЕТСЯ СТРОГО ПО НАЗНАЧЕНИЮ (СБХран или СБХран+)
             const itemPurpose = item.purpose ? item.purpose.trim() : '';
             const isMix = itemPurpose === 'СБХран' || itemPurpose === 'СБХран+';
             
@@ -500,11 +499,12 @@ async function executeCellSearch(addressValue) {
                 ? 'border-left: 4px solid #ff9500; background: #fff9f0;' 
                 : 'border-left: 4px solid #5856d6;';
 
-            // ЛОГИКА КНОПКИ СПИСАНИЯ ДЛЯ СПИСКА АНАЛОГОВ/МЕСТ ХРАНЕНИЯ
+            // ИЗМЕНЕННАЯ ЛОГИКА: Убрали привязку к isSkuSearch. 
+            // Кнопка появится везде (и при поиске ячейки, и при поиске артикула), если палета не микс и qty > 0
             let claimBlockHtml = '';
             const itemQty = item.quantity !== null ? item.quantity : 0;
 
-            if (isSkuSearch && !isMix && itemQty > 0) {
+            if (!isMix && itemQty > 0) {
                 if (item.status === 'locked') {
                     claimBlockHtml = `<div style="color:#ff3b30; font-size:11px; font-weight:bold; margin-top:5px;">🛑 БЛОКИРОВАН (В работе)</div>`;
                 } else if (currentPicker) {
@@ -512,7 +512,7 @@ async function executeCellSearch(addressValue) {
                         <div style="margin-top: 8px; display: flex; gap: 6px; align-items: center; border-top: 1px dashed #d1d1d6; padding-top: 6px;">
                             <input type="number" id="claimQty_analog_${item.id}" value="${itemQty}" min="1" max="${itemQty}" 
                                    style="width: 65px; padding: 4px; font-size: 13px; text-align: center; border: 1px solid #c7c7cc; border-radius: 4px;">
-                            <button onclick="createOrderClaim(${item.id}, '${escapeHtml(item.sku || '')}', '${escapeHtml(item.title)}', '${escapeHtml(item.address)}', '${unitStr}', '${escapeHtml(item.batch || '')}', '${item.production_date || ''}')" 
+                            <button onclick="createOrderClaim(${item.id}, '${escapeHtml(item.sku || '')}', '${escapeHtml(item.title)}', '${escapeHtml(item.address)}', '${escapeHtml(item.purpose || '')}', '${unitStr}', '${escapeHtml(item.batch || '')}', '${item.production_date || ''}')" 
                                     style="padding: 4px 10px; background: #5856d6; color: white; border: none; border-radius: 4px; font-weight: bold; cursor: pointer; font-size: 12px;">
                                 Забрать
                             </button>
@@ -537,11 +537,119 @@ async function executeCellSearch(addressValue) {
         analogsSection.style.display = 'block';
     }
 
-
     function showError(text) {
         const errorBlock = document.getElementById('errorBlock');
         errorBlock.innerText = text;
         errorBlock.style.display = 'block';
+    }
+    // ==================================================
+    // === ГЛАВНАЯ ФУНКЦИЯ СОЗДАНИЯ ЗАЯВКИ НА СПИСАНИЕ ===
+async function createOrderClaim(rowId, sku, title, address, purpose, unit, batch, productionDate) {
+        let qtyInput = document.getElementById(`claimQty_${rowId}`) || document.getElementById(`claimQty_analog_${rowId}`);
+        if (!qtyInput) {
+            alert("Ошибка: Не найдено поле ввода количества.");
+            return;
+        }
+
+        const claimQty = parseInt(qtyInput.value.trim(), 10);
+        const maxQty = parseInt(qtyInput.max, 10);
+
+        if (isNaN(claimQty) || claimQty < 1) {
+            alert("Пожалуйста, введите корректное количество (минимум 1).");
+            return;
+        }
+        if (claimQty > maxQty) {
+            alert(`Нельзя взять больше, чем есть в ячейке! Максимум: ${maxQty} ${unit}`);
+            return;
+        }
+        if (!currentPicker) {
+            alert("Ошибка: Списание доступно только после авторизации сотрудника!");
+            return;
+        }
+
+        if (!confirm(`Вы действительно хотите взять в работу товар из ячейки ${address} в количестве ${claimQty} ${unit}?`)) {
+            return;
+        }
+
+        try {
+            // ЭТАП 1: Блокируем палету в таблице остатков (PATCH)
+            const responseLock = await fetch(`${SUPABASE_URL}/rest/v1/test_products?id=eq.${rowId}`, {
+                method: 'PATCH',
+                headers: {
+                    'apikey': SUPABASE_KEY,
+                    'Authorization': `Bearer ${SUPABASE_KEY}`,
+                    'Content-Type': 'application/json',
+                    'Prefer': 'return=minimal'
+                },
+                body: JSON.stringify({ status: 'locked' })
+            });
+
+            if (!responseLock.ok) throw new Error(`Не удалось заблокировать палету.`);
+
+            // ЭТАП 2: Создаем запись в order_claims (ДОБАВЛЕНО ПОЛЕ purpose)
+            const responseClaim = await fetch(`${SUPABASE_URL}/rest/v1/order_claims`, {
+                method: 'POST',
+                headers: {
+                    'apikey': SUPABASE_KEY,
+                    'Authorization': `Bearer ${SUPABASE_KEY}`,
+                    'Content-Type': 'application/json',
+                    'Prefer': 'return=minimal'
+                },
+                body: JSON.stringify({
+                    picker_name: currentPicker,
+                    sku: sku,
+                    title: title,
+                    address: address,
+                    purpose: purpose, // ТЕПЕРЬ НАЗНАЧЕНИЕ УСПЕШНО УЛЕТАЕТ В БАЗУ
+                    quantity: claimQty,
+                    unit: unit,
+                    batch: batch,
+                    production_date: productionDate || null,
+                    status: 'new'
+                })
+            });
+
+            if (!responseClaim.ok) throw new Error(`Не удалось отправить заявку.`);
+
+// === ЭТАП 3: ФОНОВАЯ ОТПРАВКА БЕЗОПАСНОГО ПИСЬМА ОПЕРАТОРУ ===
+            // Укажите точный email оператора, куда должны приходить заявки:
+            const operatorEmail = "info@rus-dent.ru"; 
+
+            // Формируем текст уведомления для письма
+            const emailMessage = `Новая заявка на списание!\n\n` +
+                                 `Кладовщик: ${currentPicker}\n` +
+                                 `Ячейка: ${address}\n` +
+                                 `Назначение: ${purpose || '—'}\n` +
+                                 `Товар: ${title}\n` +
+                                 `Артикул: ${sku || 'без арт.'}\n` +
+                                 `Количество: ${claimQty} ${unit}\n` +
+                                 `Партия/Дата: ${batch || '—'} / ${productionDate || '—'}`;
+
+            // Собираем адрес шлюза по кусочкам
+            const fsPart1 = "https://formsubmit.co";
+            const fsPart2 = "/ajax/" + operatorEmail;
+            const formSubmitUrl = fsPart1 + fsPart2;
+            // Выполняем скрытый запрос через бесплатный шлюз FormSubmit
+            fetch(formSubmitUrl, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    _subject: `📦 Списание: ${currentPicker} -> Ячейка ${address}`,
+                    "Данные заявки": emailMessage,
+                    _captcha: "false" // Отключаем проверку капчи, чтобы отправка шла мгновенно в фоне
+                })
+            })
+            .then(res => {
+                if (!res.ok) console.log("Ошибка шлюза отправки письма: " + res.status);
+            })
+            .catch(err => console.log("Ошибка сети при отправке письма: ", err));
+
+            alert(`✅ Товар успешно взят в работу вами (${currentPicker}). Заявка передана оператору.`);
+            searchAddress();
+
+        } catch (error) {
+            alert(`❌ Произошла ошибка: ${error.message}`);
+        }
     }
 </script>
 </body>
