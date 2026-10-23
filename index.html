@@ -201,7 +201,6 @@ async function executeSecureLogin(secretQrValue) {
         });
         const data = await response.json();
 
-        // ИСПРАВЛЕНО: Читаем первый элемент массива [0]
         if (data && data.length > 0) {
             const picker = data[0]; 
             
@@ -214,12 +213,17 @@ async function executeSecureLogin(secretQrValue) {
                 headers: {
                     'apikey': SUPABASE_KEY,
                     'Authorization': `Bearer ${SUPABASE_KEY}`,
-                    'Content-Type': 'application/json'
+                    'Content-Type': 'application/json',
+                    'Prefer': 'return=minimal'
                 },
                 body: JSON.stringify({ device_token: generatedToken })
             });
 
-            if (!patchResponse.ok) throw new Error("Не удалось сохранить токен устройства на сервере.");
+            // ПРОВЕРКА ОТВЕТА БАЗЫ ДАННЫХ: Если Supabase заблокирует запись, мы увидим ошибку
+            if (!patchResponse.ok) {
+                const errText = await patchResponse.text();
+                throw new Error(`Сервер Supabase отклонил запись токена. Код: ${patchResponse.status}. Описание: ${errText}`);
+            }
 
             // 4. Запоминаем токен локально в памяти телефона навсегда
             localStorage.setItem('wms_secure_token', generatedToken);
