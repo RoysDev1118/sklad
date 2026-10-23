@@ -53,14 +53,9 @@
 <div class="container">
     <h2>🔎 Складской поиск+</h2>
 
- <!-- БЛОК АВТОРИЗАЦИИ КЛАДОВЩИКА -->
-    <div id="authBlock" style="background: #e5e5ea; padding: 12px; border-radius: 8px; margin-bottom: 15px; display: flex; flex-direction: column; gap: 8px;">
-        <div style="font-size: 12px; font-weight: bold; color: #3a3a3c; text-transform: uppercase;">👤 Авторизация сотрудника</div>
-        <div style="display: flex; gap: 8px;">
-            <input type="text" id="pickerNameInput" placeholder="Имя (4 буквы)" max-length="10" style="margin-bottom: 0; padding: 8px; font-size: 15px; letter-spacing: 0; text-align: left;">
-            <button onclick="loginPicker()" style="padding: 8px 15px; background: #5856d6; color: white; border: none; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 14px;">Войти</button>
-        </div>
-        <div id="authStatus" style="font-size: 13px; color: #636366; font-weight: 500;">Режим: 👀 Только просмотр</div>
+    <!-- СКРЫТЫЙ ИНДИКАТОР СТАТУСА АВТОРИЗАЦИИ -->
+    <div id="secureAuthBar" style="background: #e5e5ea; padding: 10px; border-radius: 8px; margin-bottom: 15px; text-align: center; font-size: 14px; font-weight: 600; color: #636366;">
+        <span id="authStatusText">Режим: 👀 Только просмотр</span>
     </div>
     
     <button class="scan-btn" id="toggleScanBtn" onclick="toggleScanner()">📷 Включить сканер</button>
@@ -86,7 +81,7 @@
         <div id="analogsList"></div>
     </div>
 
-    <div class="version-tag">сборка: 1.3.1 (сборные ячейки)</div>
+    <div class="version-tag">сборка: 1.4.0 (secure device token)</div>
 </div>
 <script>
     // ==================================================
@@ -94,96 +89,153 @@
     const SUPABASE_URL = "https://qxpnzaokqdctnfiqrrvx.supabase.co";
     const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InF4cG56YW9rcWRjdG5maXFycnZ4Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTA0MzA1OTAsImV4cCI6MjEwNjAwNjU5MH0.F8Or6x0QaghtTd4I_CZZA1LkXkgGYrbDraDmudQCEAc";
     // ==================================================
-    let videoStream = null;
-    let scanInterval = null;
- let currentPicker = null; // Хранит имя авторизованного кладовщика (4 буквы)
+let videoStream = null;
+let scanInterval = null;
+let currentPicker = null; // Хранит имя авторизованного кладовщика
 
-    // Функция авторизации
-    async function loginPicker() {
-        let nameInput = document.getElementById('pickerNameInput').value.trim();
-        const statusDiv = document.getElementById('authStatus');
-        document.getElementById('errorBlock').style.display = 'none';
+// АВТО-ПРОВЕРКА ТОКЕНА УСТРОЙСТВА ПРИ ЗАГРУЗКЕ СТРАНИЦЫ
+window.addEventListener('DOMContentLoaded', async () => {
+    const savedToken = localStorage.getItem('wms_secure_token');
+    const statusText = document.getElementById('authStatusText');
+    const statusBar = document.getElementById('secureAuthBar');
 
-        if (!nameInput) {
-            statusDiv.innerHTML = "Режим: 👀 Только просмотр";
-            statusDiv.style.color = "#636366";
-            currentPicker = null;
-            return;
-        }
-
-        // Приводим к формату: Первая заглавная, остальные строчные (например, вова -> Вова, roys -> Roys)
-        let formattedName = nameInput.charAt(0).toUpperCase() + nameInput.slice(1).toLowerCase();
-
-        try {
-            // Проверяем имя в таблице allowed_pickers в Supabase
-            const response = await fetch(`${SUPABASE_URL}/rest/v1/allowed_pickers?name=eq.${encodeURIComponent(formattedName)}`, {
-                headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}` }
-            });
-            const data = await response.json();
-
-            if (data.length > 0) {
-                currentPicker = data[0].name;
-                statusDiv.innerHTML = `✅ Доступ разрешен: <strong>${currentPicker}</strong> (Списания открыты)`;
-                statusDiv.style.color = "#248a3d";
-                document.getElementById('pickerNameInput').value = currentPicker;
-            } else {
-                currentPicker = null;
-                statusDiv.innerHTML = "❌ Имя не найдено в списке. Режим: 👀 Только просмотр";
-                statusDiv.style.color = "#ff3b30";
-            }
-        } catch (err) {
-            showError("Ошибка проверки пользователя: " + err.message);
-        }
+    if (!savedToken) {
+        return; // Токена нет, оставляем режим просмотра
     }
- // ==================================================
-    async function toggleScanner() {
-        const videoContainer = document.getElementById('videoContainer');
-        const video = document.getElementById('webcamVideo');
-        const btn = document.getElementById('toggleScanBtn');
-        document.getElementById('errorBlock').style.display = 'none';
 
-        if (!videoStream) {
-            try {
-                videoContainer.style.display = 'block';
-                btn.innerText = "🛑 Остановить сканер";
-                btn.style.backgroundColor = "#ff3b30";
+    try {
+        // Проверяем, есть ли в базе активный сотрудник с таким токеном устройства
+        const response = await fetch(`${SUPABASE_URL}/rest/v1/allowed_pickers?device_token=eq.${encodeURIComponent(savedToken)}&is_active=eq.true`, {
+            headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}` }
+        });
+        const data = await response.json();
 
-                videoStream = await navigator.mediaDevices.getUserMedia({
-                    video: { facingMode: "environment" },
-                    audio: false
-                });
-                
-                video.srcObject = videoStream;
-                await video.play();
-
-                if (!window.BarcodeDetector) {
-                    showError("Встроенный сканер не поддерживается. Используйте ручной ввод.");
-                    return;
-                }
-
-                const barcodeDetector = new BarcodeDetector({ formats: ['qr_code'] });
-
-                scanInterval = setInterval(async () => {
-                    if (video.readyState === video.HAVE_ENOUGH_DATA) {
-                        try {
-                            const barcodes = await barcodeDetector.detect(video);
-                            if (barcodes.length > 0) {
-                                document.getElementById('addressInput').value = barcodes[0].rawValue;
-                                stopCamera();
-                                searchAddress();
-                            }
-                        } catch (e) { }
-                    }
-                }, 300);
-
-            } catch (err) {
-                showError("Не удалось получить доступ к камере: " + err.message);
-                stopCamera();
-            }
+        if (data.length > 0) {
+            currentPicker = data[0].name;
+            statusText.innerHTML = `👤 Сотрудник: <strong>${currentPicker}</strong> (Списания открыты)`;
+            statusBar.style.backgroundColor = "#e6f4ea";
+            statusText.style.color = "#248a3d";
         } else {
+            // Если токен устарел или флаг is_active = false (сотрудник уволен)
+            localStorage.removeItem('wms_secure_token');
+            currentPicker = null;
+            statusText.innerText = "Режим: 👀 Только просмотр";
+            statusBar.style.backgroundColor = "#e5e5ea";
+            statusText.style.color = "#636366";
+        }
+    } catch (err) {
+        console.error("Ошибка авто-авторизации:", err);
+    }
+});
+ // ==================================================
+ // УМНЫЙ СКАНЕР КАМЕРЫ С ПЕРЕХВАТОМ АВТОРИЗАЦИИ
+async function toggleScanner() {
+    const videoContainer = document.getElementById('videoContainer');
+    const video = document.getElementById('webcamVideo');
+    const btn = document.getElementById('toggleScanBtn');
+    document.getElementById('errorBlock').style.display = 'none';
+
+    if (!videoStream) {
+        try {
+            videoContainer.style.display = 'block';
+            btn.innerText = "🛑 Остановить сканер";
+            btn.style.backgroundColor = "#ff3b30";
+
+            videoStream = await navigator.mediaDevices.getUserMedia({
+                video: { facingMode: "environment" },
+                audio: false
+            });
+            
+            video.srcObject = videoStream;
+            await video.play();
+
+            if (!window.BarcodeDetector) {
+                showError("Встроенный сканер не поддерживается. Используйте ручной ввод.");
+                return;
+            }
+
+            const barcodeDetector = new BarcodeDetector({ formats: ['qr_code'] });
+
+            scanInterval = setInterval(async () => {
+                if (video.readyState === video.HAVE_ENOUGH_DATA) {
+                    try {
+                        const barcodes = await barcodeDetector.detect(video);
+                        if (barcodes.length > 0) {
+                            const rawValue = barcodes[0].rawValue.trim();
+                            
+                            // ПЕРЕХВАТЧИК: Проверяем, не является ли QR-код секретным кодом авторизации
+                            if (rawValue.toLowerCase().startsWith('login:')) {
+                                stopCamera();
+                                await executeSecureLogin(rawValue);
+                                return;
+                            }
+
+                            // Если это обычный QR-код ячейки склада
+                            document.getElementById('addressInput').value = rawValue;
+                            stopCamera();
+                            searchAddress();
+                        }
+                    } catch (e) { }
+                }
+            }, 300);
+
+        } catch (err) {
+            showError("Не удалось получить доступ к камере: " + err.message);
             stopCamera();
         }
+    } else {
+        stopCamera();
     }
+}
+
+// СКРЫТАЯ ФУНКЦИЯ ПРИВЯЗКИ УСТРОЙСТВА ПРИ СКАНЕРЕ БЭЙДЖА
+async function executeSecureLogin(secretQrValue) {
+    const statusText = document.getElementById('authStatusText');
+    const statusBar = document.getElementById('secureAuthBar');
+
+    try {
+        // 1. Ищем активного сотрудника с таким QR-кодом
+        const response = await fetch(`${SUPABASE_URL}/rest/v1/allowed_pickers?qr_code=eq.${encodeURIComponent(secretQrValue)}&is_active=eq.true`, {
+            headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}` }
+        });
+        const data = await response.json();
+
+        if (data.length > 0) {
+            const picker = data[0];
+            
+            // 2. Генерируем уникальный токен для этого смартфона
+            const generatedToken = 'tk_' + picker.name.toLowerCase() + '_' + Math.random().toString(36).substring(2, 15);
+            
+            // 3. Записываем сгенерированный токен устройства в Supabase (PATCH)
+            const patchResponse = await fetch(`${SUPABASE_URL}/rest/v1/allowed_pickers?id=eq.${picker.id}`, {
+                method: 'PATCH',
+                headers: {
+                    'apikey': SUPABASE_KEY,
+                    'Authorization': `Bearer ${SUPABASE_KEY}`,
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ device_token: generatedToken })
+            });
+
+            if (!patchResponse.ok) throw new Error("Не удалось сохранить токен устройства на сервере.");
+
+            // 4. Запоминаем токен локально в памяти телефона навсегда
+            localStorage.setItem('wms_secure_token', generatedToken);
+            currentPicker = picker.name;
+
+            // 5. Визуально трансформируем статус приложения
+            statusText.innerHTML = `👤 Сотрудник: <strong>${currentPicker}</strong> (Списания открыты)`;
+            statusBar.style.backgroundColor = "#e6f4ea";
+            statusText.style.color = "#248a3d";
+
+            alert(`🎯 Доступ успешно активирован для устройства! Добро пожаловать, ${currentPicker}.`);
+        } else {
+            alert("❌ Ошибка авторизации: Код не распознан или учетная запись сотрудника заблокирована.");
+        }
+    } catch (err) {
+        alert("Критическая ошибка привязки устройства: " + err.message);
+    }
+}
 
     function stopCamera() {
         const videoContainer = document.getElementById('videoContainer');
@@ -199,136 +251,138 @@
         btn.style.backgroundColor = "#34c759";
     }
 
-    // ГЛАВНЫЙ ДИСПЕТЧЕР ПОИСКА
-    async function searchAddress() {
-        let inputValue = document.getElementById('addressInput').value.trim();
-        
-        // Очищаем экраны перед новым поиском
-        document.getElementById('addressHeader').style.display = 'none';
-        document.getElementById('productsContainer').innerHTML = '';
-        document.getElementById('analogsSection').style.display = 'none';
-        document.getElementById('analogsList').innerHTML = '';
-        document.getElementById('errorBlock').style.display = 'none';
+// ГЛАВНЫЙ ДИСПЕТЧЕР ПОИСКА
+async function searchAddress() {
+    let inputValue = document.getElementById('addressInput').value.trim();
+    
+    // Очищаем экраны перед новым поиском
+    document.getElementById('addressHeader').style.display = 'none';
+    document.getElementById('productsContainer').innerHTML = '';
+    document.getElementById('analogsSection').style.display = 'none';
+    document.getElementById('analogsList').innerHTML = '';
+    document.getElementById('errorBlock').style.display = 'none';
 
-        if (!inputValue) {
-            showError("Пожалуйста, введите или отсканируйте данные");
-            return;
-        }
-
-        // СЦЕНАРИЙ 1: Поиск по АРТИКУЛУ (метка #)
-        if (inputValue.startsWith('#')) {
-            const cleanSku = inputValue.substring(1).trim();
-            if (!cleanSku) { showError("Артикул после # не может быть пустым"); return; }
-            await executeSkuSearch(cleanSku);
-            return;
-        }
-
-        // Предобработка ввода для ячеек и гибридов (авто-дефисы, если ввели слитно, например 2хх5 или 10015)
-        if (!inputValue.includes('-')) {
-            let clean = inputValue.toLowerCase();
-            if (clean.length === 4) { // формат 2хх5 -> 2-хх-5 или 1012 -> 1-01-2
-                inputValue = `${clean.charAt(0)}-${clean.substring(1,3)}-${clean.charAt(3)}`;
-            } else if (clean.length === 5) { // формат 10хх5 -> 10-хх-5 или 10015 -> 10-01-5
-                inputValue = `${clean.substring(0,2)}-${clean.substring(2,4)}-${clean.charAt(4)}`;
-            }
-        }
-
-        // СЦЕНАРИЙ 2: ГИБРИДНЫЙ ПОИСК (маска содержит "хх")
-        if (inputValue.toLowerCase().includes('хх') || inputValue.includes('xx')) {
-            // Приводим русское "х" и английское "x" к общему виду для Supabase
-            const dbSearchMask = inputValue.toLowerCase().replace(/x/g, '%').replace(/х/g, '%');
-            await executeHybridSearch(dbSearchMask, inputValue);
-            return;
-        }
-
-        // СЦЕНАРИЙ 3: ОБЫЧНЫЙ ПОИСК КОНКРЕТНОЙ ЯЧЕЙКИ (текущий рабочий режим)
-        await executeCellSearch(inputValue);
+    if (!inputValue) {
+        showError("Пожалуйста, введите или отсканируйте данные");
+        return;
     }
+
+    // СЦЕНАРИЙ 1: Поиск по АРТИКУЛУ (метка #)
+    if (inputValue.startsWith('#')) {
+        const cleanSku = inputValue.substring(1).trim();
+        if (!cleanSku) { showError("Артикул после # не может быть пустым"); return; }
+        await executeSkuSearch(cleanSku);
+        return;
+    }
+
+    // СЦЕНАРИЙ 2: БЕЗАДРЕСНАЯ ЗОНА (Правило: длина <= 3 символов. Пример: ЗП, КБ)
+    if (inputValue.length <= 3) {
+        await executeCellSearch(inputValue);
+        return;
+    }
+
+    // Предобработка ввода для АДРЕСНЫХ ЯЧЕЕК СТЕЛЛАЖЕЙ (авто-дефисы)
+    if (!inputValue.includes('-')) {
+        let clean = inputValue.toLowerCase();
+        if (clean.length === 4) { // формат 2хх5 -> 2-хх-5 или 1012 -> 1-01-2
+            inputValue = `${clean.charAt(0)}-${clean.substring(1,3)}-${clean.charAt(3)}`;
+        } else if (clean.length === 5) { // формат 10хх5 -> 10-хх-5 или 10015 -> 10-01-5
+            inputValue = `${clean.substring(0,2)}-${clean.substring(2,4)}-${clean.charAt(4)}`;
+        }
+    }
+
+    // СЦЕНАРИЙ 3: ГИБРИДНЫЙ ПОИСК ПО УРОВНЮ СТЕЛЛАЖА (маска содержит "хх")
+    if (inputValue.toLowerCase().includes('хх') || inputValue.includes('xx')) {
+        const dbSearchMask = inputValue.toLowerCase().replace(/x/g, '%').replace(/х/g, '%');
+        await executeHybridSearch(dbSearchMask, inputValue);
+        return;
+    }
+
+    // СЦЕНАРИЙ 4: ОБЫЧНЫЙ ПОИСК КОНКРЕТНОЙ АДРЕСНОЙ ЯЧЕЙКИ
+    await executeCellSearch(inputValue);
+}
     // ==================================================
-    // === ИСПОЛНИТЕЛЬ СЦЕНАРИЯ 3: ПОИСК КОНКРЕТНОЙ ЯЧЕЙКИ ===
+// === ИСПОЛНИТЕЛЬ СЦЕНАРИЯ 3: ПОИСК КОНКРЕТНОЙ ЯЧЕЙКИ ===
 async function executeCellSearch(addressValue) {
-        const addressHeader = document.getElementById('addressHeader');
-        const productsContainer = document.getElementById('productsContainer');
-        const analogsSection = document.getElementById('analogsSection');
-        const analogsList = document.getElementById('analogsList');
+    const addressHeader = document.getElementById('addressHeader');
+    const productsContainer = document.getElementById('productsContainer');
+    const analogsSection = document.getElementById('analogsSection');
 
-        try {
-            const response = await fetch(`${SUPABASE_URL}/rest/v1/test_products?address=eq.${encodeURIComponent(addressValue)}`, {
-                headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}` }
-            });
-            if (!response.ok) throw new Error(`Ошибка сервера: ${response.status}`);
-            const targetData = await response.json();
+    try {
+        const response = await fetch(`${SUPABASE_URL}/rest/v1/test_products?address=eq.${encodeURIComponent(addressValue)}`, {
+            headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}` }
+        });
+        if (!response.ok) throw new Error(`Ошибка сервера: ${response.status}`);
+        let targetData = await response.json();
 
-            const validItems = targetData.filter(item => item.title && item.title.trim() !== "");
-            if (validItems.length === 0) {
-                showError(`Ячейка ${addressValue} пуста.`);
-                return;
+        let validItems = targetData.filter(item => item.title && item.title.trim() !== "");
+        if (validItems.length === 0) {
+            showError(`Ячейка или зона "${addressValue}" пуста или не существует.`);
+            return;
+        }
+
+        // Если с гибридного поиска/аналогов пришел конкретный массив ID для раскрытия палета
+        if (window.nextSearchTargetIds && Array.isArray(window.nextSearchTargetIds)) {
+            validItems = validItems.filter(item => window.nextSearchTargetIds.includes(item.id));
+            window.nextSearchTargetIds = null; // сбрасываем триггер
+        }
+
+        document.getElementById('targetAddressTitle').innerText = addressValue.toUpperCase();
+        addressHeader.style.display = 'block';
+
+        // КРИТЕРИЙ: Проверяем длину введенного адреса
+        const isUnstructuredZone = addressValue.length <= 3;
+
+        if (isUnstructuredZone) {
+            // =========================================================================
+            // ЛОГИКА ДЛЯ БЕЗАДРЕСНЫХ ЗОН (Длина <= 3: Схлопываем палеты паровозиком по ID)
+            // =========================================================================
+            validItems.sort((a, b) => a.id - b.id); // Восстанавливаем хронологический порядок строк
+
+            let i = 0;
+            let groupCounter = 1;
+
+            while (i < validItems.length) {
+                let currentItem = validItems[i];
+                let purpose = (currentItem.purpose || '').trim();
+
+                if (purpose === 'СБХран') {
+                    let mixBlockItems = [currentItem];
+                    i++;
+                    while (i < validItems.length && (validItems[i].purpose || '').trim() === 'СБХран+') {
+                        mixBlockItems.push(validItems[i]);
+                        i++;
+                    }
+
+                    const stringifiedIds = JSON.stringify(mixBlockItems.map(item => item.id));
+
+                    productsContainer.innerHTML += `
+                        <div class="result-card multi-item" style="border-left-color: #ff9500; background-color: #fff9f0;">
+                            <div class="result-item" style="font-size: 16px; color: #ff9500;"><strong>📍 Зона:</strong> <span style="font-weight: bold;">${currentItem.address}</span></div>
+                            <div class="result-item" style="font-weight: bold; color: #d97706; margin-top: 5px;">⚠️ СБОРНЫЙ ПАЛЕТ №${groupCounter} (${mixBlockItems.length} поз.)</div>
+                            <div class="result-item" style="font-size: 12px; color: #7f8c8d;">Содержит артикулы: ${mixBlockItems.map(b => b.sku || 'без арт.').join(', ')}</div>
+                            <button onclick='quickViewCell("${currentItem.address}", ${stringifiedIds})' style="margin-top:8px; width:100%; padding:8px; background:#ff9500; color:white; border:none; border-radius:6px; font-weight:bold; cursor:pointer; font-size:13px;">🔎 Раскрыть только этот палет</button>
+                        </div>`;
+                    groupCounter++;
+                } else {
+                    // Обычное одиночное «Хранение»
+                    renderItemCard(productsContainer, currentItem);
+                    i++;
+                }
             }
 
-            document.getElementById('targetAddressTitle').innerText = addressValue;
-            addressHeader.style.display = 'block';
+            // Намертво отключаем аналоги для безадресных зон
+            analogsSection.style.display = 'none';
 
-            const isMultiItem = validItems.length > 1;
-
+        } else {
+            // =========================================================================
+            // ЛОГИКА ДЛЯ АДРЕСНЫХ ЯЧЕЕК СТЕЛЛАЖЕЙ (Выводим всё открыто)
+            // =========================================================================
             validItems.forEach(targetItem => {
-                let skuHtml = targetItem.sku && targetItem.sku !== '0' && targetItem.sku.trim() !== '' 
-                    ? `<span class="sku-badge">${targetItem.sku}</span>` 
-                    : '<span class="sku-none">без артикула</span>';
-
-                const displayUnit = targetItem.unit ? targetItem.unit : 'шт.';
-                const cardClass = (isMultiItem || targetItem.purpose === 'СБХран+') ? 'result-card multi-item' : 'result-card';
-                
-                // РАСЧЕТ И ОТРИСОВКА БЛОКА СПИСАНИЯ
-                let actionBlockHtml = '';
-                const itemQty = targetItem.quantity !== null ? targetItem.quantity : 0;
-                
-                if (targetItem.status === 'locked') {
-                    // Если палета заблокирована
-                    actionBlockHtml = `
-                        <div style="margin-top: 12px; padding: 10px; background: #ffe5e5; border-radius: 6px; border: 1px solid #ff3b30; color: #ff3b30; font-size: 13px; font-weight: bold; text-align: center;">
-                            🛑 ПАЛЕТА БЛОКИРОВАНА: Уже взята в работу!
-                        </div>`;
-                } else if (itemQty > 0) {
-                    // Если товар доступен и его количество > 0
-                    if (currentPicker) {
-                        // Если кладовщик авторизован — показываем кнопку и ввод количества
-                        actionBlockHtml = `
-                            <div style="margin-top: 15px; padding-top: 12px; border-top: 1px dashed #c7c7cc; display: flex; flex-direction: column; gap: 8px;">
-                                <div style="font-size: 12px; font-weight: bold; color: #5856d6; text-transform: uppercase;">Списание позиции:</div>
-                                <div style="display: flex; gap: 8px; align-items: center;">
-                                    <input type="number" id="claimQty_${targetItem.id}" value="${itemQty}" min="1" max="${itemQty}" 
-                                           style="width: 80px; margin-bottom: 0; padding: 8px; font-size: 15px; letter-spacing: 0; text-align: center;">
-                                    <span style="font-size: 14px; color: #505050; font-weight: 500;">${displayUnit}</span>
-                                    <button onclick="createOrderClaim(${targetItem.id}, '${escapeHtml(targetItem.sku || '')}', '${escapeHtml(targetItem.title)}', '${escapeHtml(targetItem.address)}', '${escapeHtml(targetItem.purpose || '')}', '${displayUnit}', '${escapeHtml(targetItem.batch || '')}', '${targetItem.production_date || ''}')"  
-                                            style="flex: 1; padding: 10px; background-color: #5856d6; color: white; border: none; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 14px;">
-                                        Взять в работу
-                                    </button>
-                                </div>
-                            </div>`;
-                    } else {
-                        // Если зашел как гость (просмотр)
-                        actionBlockHtml = `
-                            <div style="margin-top: 12px; font-size: 12px; color: #8e8e93; text-align: center; font-style: italic;">
-                                Авторизуйтесь, чтобы активировать списание товара.
-                            </div>`;
-                    }
-                }
-
-                productsContainer.innerHTML += `
-                    <div class="${cardClass}">
-                        <div class="result-item"><strong>Артикул:</strong> ${skuHtml}</div>
-                        <div class="result-item"><strong>Наименование продукции:</strong> <span style="font-weight: 500;">${targetItem.title}</span></div>
-                        <div class="result-item"><strong>Назначение:</strong> <span>${targetItem.purpose || '—'}</span></div>
-                        <div class="result-item"><strong>Количество здесь:</strong> <span>${itemQty} ${displayUnit}</span></div>
-                        <div class="result-item"><strong>Партия:</strong> <span>${targetItem.batch || '—'}</span></div>
-                        <div class="result-item"><strong>Дата производства:</strong> <span>${targetItem.production_date || '—'}</span></div>
-                        ${actionBlockHtml}
-                    </div>
-                `;
+                renderItemCard(productsContainer, targetItem);
             });
 
-            if (isMultiItem) return; 
-
+            // Для ячеек стеллажей подгружаем сквозные аналоги по первому товару
             const singleProductTitle = validItems[0].title;
             const responseAnalogs = await fetch(`${SUPABASE_URL}/rest/v1/test_products?title=eq.${encodeURIComponent(singleProductTitle)}&address=neq.${encodeURIComponent(addressValue)}`, {
                 headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}` }
@@ -345,86 +399,198 @@ async function executeCellSearch(addressValue) {
 
                 const cellAddresses = [...new Set(analogsData.map(item => item.address))];
                 renderAnalogsListWithMixCheck(analogsData, cellAddresses);
+            } else {
+                analogsSection.style.display = 'none';
             }
+        }
 
-        } catch (error) { showError(`Ошибка: ${error.message}`); }
+    } catch (error) { showError(`Ошибка: ${error.message}`); }
+}
+
+// Внутренняя функция для чистой отрисовки карточки товара со списанием
+function renderItemCard(container, targetItem) {
+    let skuHtml = targetItem.sku && targetItem.sku !== '0' && targetItem.sku.trim() !== '' 
+        ? `<span class="sku-badge">${targetItem.sku}</span>` 
+        : '<span class="sku-none">без артикула</span>';
+
+    const displayUnit = targetItem.unit ? targetItem.unit : 'шт.';
+    const itemPurpose = (targetItem.purpose || '').trim();
+    const cardClass = (itemPurpose === 'СБХран' || itemPurpose === 'СБХран+') ? 'result-card multi-item' : 'result-card';
+    
+    let actionBlockHtml = '';
+    const itemQty = targetItem.quantity !== null ? targetItem.quantity : 0;
+    
+    if (targetItem.status === 'locked') {
+        actionBlockHtml = `
+            <div style="margin-top: 12px; padding: 10px; background: #ffe5e5; border-radius: 6px; border: 1px solid #ff3b30; color: #ff3b30; font-size: 13px; font-weight: bold; text-align: center;">
+                🛑 ПАЛЕТА БЛОКИРОВАНА: Уже взята в работу!
+            </div>`;
+    } else if (itemQty > 0) {
+        if (currentPicker) {
+            actionBlockHtml = `
+                <div style="margin-top: 15px; padding-top: 12px; border-top: 1px dashed #c7c7cc; display: flex; flex-direction: column; gap: 8px;">
+                    <div style="font-size: 12px; font-weight: bold; color: #5856d6; text-transform: uppercase;">Списание позиции:</div>
+                    <div style="display: flex; gap: 8px; align-items: center;">
+                        <input type="number" id="claimQty_${targetItem.id}" value="${itemQty}" min="1" max="${itemQty}" 
+                               style="width: 80px; margin-bottom: 0; padding: 8px; font-size: 15px; letter-spacing: 0; text-align: center;">
+                        <span style="font-size: 14px; color: #505050; font-weight: 500;">${displayUnit}</span>
+                        <button onclick="createOrderClaim(${targetItem.id}, '${escapeHtml(targetItem.sku || '')}', '${escapeHtml(targetItem.title)}', '${escapeHtml(targetItem.address)}', '${escapeHtml(targetItem.purpose || '')}', '${displayUnit}', '${escapeHtml(targetItem.batch || '')}', '${targetItem.production_date || ''}')"  
+                                style="flex: 1; padding: 10px; background-color: #5856d6; color: white; border: none; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 14px;">
+                            Взять в работу
+                        </button>
+                    </div>
+                </div>`;
+        } else {
+            actionBlockHtml = `
+                <div style="margin-top: 12px; font-size: 12px; color: #8e8e93; text-align: center; font-style: italic;">
+                    Авторизуйтесь, чтобы активировать списание товара.
+                </div>`;
+        }
     }
+
+    container.innerHTML += `
+        <div class="${cardClass}">
+            <div class="result-item"><strong>Артикул:</strong> ${skuHtml}</div>
+            <div class="result-item"><strong>Наименование продукции:</strong> <span style="font-weight: 500;">${targetItem.title}</span></div>
+            <div class="result-item"><strong>Назначение:</strong> <span>${targetItem.purpose || '—'}</span></div>
+            <div class="result-item"><strong>Количество здесь:</strong> <span>${itemQty} ${displayUnit}</span></div>
+            <div class="result-item"><strong>Партия:</strong> <span>${targetItem.batch || '—'}</span></div>
+            <div class="result-item"><strong>Дата производства:</strong> <span>${targetItem.production_date || '—'}</span></div>
+            ${actionBlockHtml}
+        </div>`;
+}
 
     // Вспомогательная техническая функция защиты от кавычек в тексте
     function escapeHtml(string) {
         return String(string).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
     }
     // ==================================================
- // === ИСПОЛНИТЕЛЬ СЦЕНАРИЯ 2: ГИБРИДНЫЙ ПОИСК (УРОВЕНЬ СТЕЛЛАЖА) ===
-    async function executeHybridSearch(dbSearchMask, originalInput) {
-        const addressHeader = document.getElementById('addressHeader');
-        const productsContainer = document.getElementById('productsContainer');
+// Вспомогательная функция для раскрытия состава
+function quickViewCell(address, targetIds = null) {
+    document.getElementById('addressInput').value = address;
+    
+    // Если переданы конкретные ID (для зоны типа ЗП), временно сохраняем их в глобальную переменную
+    window.nextSearchTargetIds = targetIds; 
+    
+    searchAddress();
+}
 
-        try {
-            const response = await fetch(`${SUPABASE_URL}/rest/v1/test_products?address=like.${encodeURIComponent(dbSearchMask)}`, {
-                headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}` }
-            });
-            if (!response.ok) throw new Error(`Ошибка сервера: ${response.status}`);
-            const data = await response.json();
+// === ИСПОЛНИТЕЛЬ СЦЕНАРИЯ 2: ГИБРИДНЫЙ ПОИСК / ПОИСК ЗОНЫ ===
+async function executeHybridSearch(dbSearchMask, originalInput) {
+    const addressHeader = document.getElementById('addressHeader');
+    const productsContainer = document.getElementById('productsContainer');
 
-            const validItems = data.filter(item => item.title && item.title.trim() !== "");
-            if (validItems.length === 0) {
-                showError(`На уровне стеллажа по запросу "${originalInput}" товаров не найдено.`);
-                return;
-            }
+    try {
+        const response = await fetch(`${SUPABASE_URL}/rest/v1/test_products?address=like.${encodeURIComponent(dbSearchMask)}`, {
+            headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}` }
+        });
+        if (!response.ok) throw new Error(`Ошибка сервера: ${response.status}`);
+        let data = await response.json(); 
 
-            // Группируем товары по ячейкам для выявления миксов
+        const validItems = data.filter(item => item.title && item.title.trim() !== "");
+        if (validItems.length === 0) {
+            showError(`В зоне/на стеллаже по запросу "${originalInput}" товаров не найдено.`);
+            return;
+        }
+
+        document.getElementById('targetAddressTitle').innerText = originalInput.toUpperCase();
+        addressHeader.style.display = 'block';
+
+        const isCellStyle = originalInput.includes('-');
+
+        if (isCellStyle) {
+            // --- ЛОГИКА ДЛЯ СТЕЛЛАЖЕЙ (ЯЧЕЙКИ с-мм-у, например 2-хх-2) ---
             const cellsMap = {};
             validItems.forEach(item => {
-                if (!cellsMap[item.address]) {
-                    cellsMap[item.address] = [];
-                }
+                if (!cellsMap[item.address]) cellsMap[item.address] = [];
                 cellsMap[item.address].push(item);
             });
 
-            // Получаем уникальные адреса и сортируем их по порядку
             const sortedAddresses = Object.keys(cellsMap).sort((a, b) => a.localeCompare(b));
-
-            document.getElementById('targetAddressTitle').innerText = originalInput.toUpperCase();
-            addressHeader.style.display = 'block';
 
             sortedAddresses.forEach(addr => {
                 const itemsInCell = cellsMap[addr];
-                // Ячейка сборная, если в ней > 1 товара или хотя бы у одного назначение СБХран+
-                const isMix = itemsInCell.length > 1 || itemsInCell.some(i => i.purpose === 'СБХран+');
+                const hasMixMarkers = itemsInCell.some(i => (i.purpose || '').trim() === 'СБХран' || (i.purpose || '').trim() === 'СБХран+');
+                const isMix = itemsInCell.length > 1 || hasMixMarkers;
 
                 if (isMix) {
-                    // Оранжевая карточка для микс-палета
                     productsContainer.innerHTML += `
                         <div class="result-card multi-item" style="border-left-color: #ff9500; background-color: #fff9f0;">
                             <div class="result-item" style="font-size: 16px; color: #ff9500;"><strong>📍 Адрес хранения:</strong> <span style="font-weight: bold;">${addr}</span></div>
                             <div class="result-item" style="font-weight: bold; color: #d97706; margin-top: 5px;">⚠️ СБОРНЫЙ МИКС-ПАЛЕТ (СБХран)</div>
-                            <div class="result-item" style="font-size: 12px; color: #7f8c8d;">Состав скрыт. Для просмотра отсканируйте ячейку напрямую.</div>
-                        </div>
-                    `;
+                            <button onclick="quickViewCell('${addr}')" style="margin-top:8px; width:100%; padding:8px; background:#ff9500; color:white; border:none; border-radius:6px; font-weight:bold; cursor:pointer; font-size:13px;">🔎 Открыть состав ячейки</button>
+                        </div>`;
                 } else {
-                    // Обычная карточка для моно-палета
+                    // Отрисовка МОНО-карточки для стеллажей напрямую без вызова функций
                     const item = itemsInCell[0];
                     let skuHtml = item.sku && item.sku !== '0' && item.sku.trim() !== '' 
                         ? `<span class="sku-badge">${item.sku}</span>` 
                         : '<span class="sku-none">без артикула</span>';
-
                     const displayUnit = item.unit ? item.unit : 'шт.';
 
                     productsContainer.innerHTML += `
                         <div class="result-card" style="border-left-color: #34c759;">
                             <div class="result-item" style="font-size: 16px; color: #34c759;"><strong>📍 Адрес хранения:</strong> <span>${item.address}</span></div>
                             <div class="result-item"><strong>Артикул:</strong> ${skuHtml}</div>
-                            <div class="result-item"><strong>Наименование продукции:</strong> <span style="font-weight: 500;">${item.title}</span></div>
+                            <div class="result-item"><strong>Наименование:</strong> <span style="font-weight: 500;">${item.title}</span></div>
                             <div class="result-item"><strong>Количество:</strong> <span>${item.quantity !== null ? item.quantity : 0} ${displayUnit}</span></div>
+                            <div class="result-item"><strong>Назначение:</strong> <span>${item.purpose || '—'}</span></div>
                             <div class="result-item"><strong>Дата производства:</strong> <span>${item.production_date || '—'}</span></div>
-                        </div>
-                    `;
+                        </div>`;
                 }
             });
+        } else {
+            // --- ЛОГИКА ДЛЯ НЕСТРУКТУРИРОВАННЫХ ЗОН (ЗП, Комплектация и т.д.) ---
+            validItems.sort((a, b) => a.id - b.id);
 
-        } catch (error) { showError(`Ошибка гибридного поиска: ${error.message}`); }
-    }
+            let i = 0;
+            let groupCounter = 1;
+
+            while (i < validItems.length) {
+                let currentItem = validItems[i];
+                let purpose = (currentItem.purpose || '').trim();
+
+                if (purpose === 'СБХран') {
+                    let mixBlockItems = [currentItem];
+                    i++;
+                    while (i < validItems.length && (validItems[i].purpose || '').trim() === 'СБХран+') {
+                        mixBlockItems.push(validItems[i]);
+                        i++;
+                    }
+
+                    const stringifiedIds = JSON.stringify(mixBlockItems.map(item => item.id));
+
+                    productsContainer.innerHTML += `
+                        <div class="result-card multi-item" style="border-left-color: #ff9500; background-color: #fff9f0;">
+                            <div class="result-item" style="font-size: 16px; color: #ff9500;"><strong>📍 Зона:</strong> <span style="font-weight: bold;">${currentItem.address}</span></div>
+                            <div class="result-item" style="font-weight: bold; color: #d97706; margin-top: 5px;">⚠️ СБОРНЫЙ ПАЛЕТ №${groupCounter} (${mixBlockItems.length} поз.)</div>
+                            <div class="result-item" style="font-size: 12px; color: #7f8c8d;">Содержит артикулы: ${mixBlockItems.map(b => b.sku || 'без арт.').join(', ')}</div>
+                            <button onclick='quickViewCell("${currentItem.address}", ${stringifiedIds})' style="margin-top:8px; width:100%; padding:8px; background:#ff9500; color:white; border:none; border-radius:6px; font-weight:bold; cursor:pointer; font-size:13px;">🔎 Раскрыть только этот палет</button>
+                        </div>`;
+                    groupCounter++;
+                } else {
+                    // Отрисовка МОНО-карточки для зоны ЗП напрямую без вызова функций
+                    let skuHtml = currentItem.sku && currentItem.sku !== '0' && currentItem.sku.trim() !== '' 
+                        ? `<span class="sku-badge">${currentItem.sku}</span>` 
+                        : '<span class="sku-none">без артикула</span>';
+                    const displayUnit = currentItem.unit ? currentItem.unit : 'шт.';
+
+                    productsContainer.innerHTML += `
+                        <div class="result-card" style="border-left-color: #34c759;">
+                            <div class="result-item" style="font-size: 16px; color: #34c759;"><strong>📍 Адрес хранения:</strong> <span>${currentItem.address}</span></div>
+                            <div class="result-item"><strong>Артикул:</strong> ${skuHtml}</div>
+                            <div class="result-item"><strong>Наименование:</strong> <span style="font-weight: 500;">${currentItem.title}</span></div>
+                            <div class="result-item"><strong>Количество:</strong> <span>${currentItem.quantity !== null ? currentItem.quantity : 0} ${displayUnit}</span></div>
+                            <div class="result-item"><strong>Назначение:</strong> <span>${currentItem.purpose || '—'}</span></div>
+                            <div class="result-item"><strong>Дата производства:</strong> <span>${currentItem.production_date || '—'}</span></div>
+                        </div>`;
+                    i++;
+                }
+            }
+        }
+
+    } catch (error) { showError(`Ошибка гибридного поиска: ${error.message}`); }
+}
     // ==================================================
     // ==================================================
     // === ИСПОЛНИТЕЛЬ СЦЕНАРИЯ 1: ПОИСК ПО АРТИКУЛУ SKU ===
@@ -476,66 +642,72 @@ async function executeCellSearch(addressValue) {
     }
 
     // МОДИФИЦИРОВАННАЯ ФУНКЦИЯ: КНОПКИ «ЗАБРАТЬ» ДОСТУПНЫ В АНАЛОГАХ ПРИ ЛЮБОМ ПОИСКЕ
-    async function renderAnalogsListWithMixCheck(arrayData, cellAddresses) {
-        const analogsSection = document.getElementById('analogsSection');
-        const analogsList = document.getElementById('analogsList');
-        analogsList.innerHTML = '';
+async function renderAnalogsListWithMixCheck(arrayData, cellAddresses) {
+    const analogsSection = document.getElementById('analogsSection');
+    const analogsList = document.getElementById('analogsList');
+    analogsList.innerHTML = '';
+    
+    const isSkuSearch = document.getElementById('targetAddressTitle').innerText.includes('Арт:');
+    analogsSection.querySelector('.analogs-title').innerText = isSkuSearch 
+        ? "Адреса размещения товара на складе (Приоритет FEFO):" 
+        : "Также этот товар лежит в ячейках:";
+
+    arrayData.forEach(item => {
+        const unitStr = item.unit ? item.unit : 'шт.';
+        let skuBadgeHtml = item.sku && item.sku !== '0' && item.sku.trim() !== '' 
+            ? `<span class="sku-badge" style="font-size:11px; padding:1px 4px;">Арт: ${item.sku}</span>` 
+            : '<span class="sku-none" style="font-size:11px;">без арт.</span>';
+
+        const itemPurpose = (item.purpose || '').trim();
+        const isMix = itemPurpose === 'СБХран' || itemPurpose === 'СБХран+';
         
-        const isSkuSearch = document.getElementById('targetAddressTitle').innerText.includes('Арт:');
-        analogsSection.querySelector('.analogs-title').innerText = isSkuSearch 
-            ? "Адреса размещения товара на складе (Приоритет FIFO):" 
-            : "Также этот товар лежит в ячейках:";
+        const rowStyle = isMix 
+            ? 'border-left: 4px solid #ff9500; background: #fff9f0;' 
+            : 'border-left: 4px solid #5856d6;';
 
-        arrayData.forEach(item => {
-            const unitStr = item.unit ? item.unit : 'шт.';
-            let skuBadgeHtml = item.sku && item.sku !== '0' && item.sku.trim() !== '' 
-                ? `<span class="sku-badge" style="font-size:11px; padding:1px 4px;">Арт: ${item.sku}</span>` 
-                : '<span class="sku-none" style="font-size:11px;">без арт.</span>';
+        let claimBlockHtml = '';
+        const itemQty = item.quantity !== null ? item.quantity : 0;
 
-            const itemPurpose = item.purpose ? item.purpose.trim() : '';
-            const isMix = itemPurpose === 'СБХран' || itemPurpose === 'СБХран+';
-            
-            const rowStyle = isMix 
-                ? 'border-left: 4px solid #ff9500; background: #fff9f0;' 
-                : 'border-left: 4px solid #5856d6;';
-
-            // ИЗМЕНЕННАЯ ЛОГИКА: Убрали привязку к isSkuSearch. 
-            // Кнопка появится везде (и при поиске ячейки, и при поиске артикула), если палета не микс и qty > 0
-            let claimBlockHtml = '';
-            const itemQty = item.quantity !== null ? item.quantity : 0;
-
-            if (!isMix && itemQty > 0) {
-                if (item.status === 'locked') {
-                    claimBlockHtml = `<div style="color:#ff3b30; font-size:11px; font-weight:bold; margin-top:5px;">🛑 БЛОКИРОВАН (В работе)</div>`;
-                } else if (currentPicker) {
-                    claimBlockHtml = `
-                        <div style="margin-top: 8px; display: flex; gap: 6px; align-items: center; border-top: 1px dashed #d1d1d6; padding-top: 6px;">
-                            <input type="number" id="claimQty_analog_${item.id}" value="${itemQty}" min="1" max="${itemQty}" 
-                                   style="width: 65px; padding: 4px; font-size: 13px; text-align: center; border: 1px solid #c7c7cc; border-radius: 4px;">
-                            <button onclick="createOrderClaim(${item.id}, '${escapeHtml(item.sku || '')}', '${escapeHtml(item.title)}', '${escapeHtml(item.address)}', '${escapeHtml(item.purpose || '')}', '${unitStr}', '${escapeHtml(item.batch || '')}', '${item.production_date || ''}')" 
-                                    style="padding: 4px 10px; background: #5856d6; color: white; border: none; border-radius: 4px; font-weight: bold; cursor: pointer; font-size: 12px;">
-                                Забрать
-                            </button>
-                        </div>`;
-                }
+        if (isMix) {
+            // Если позиция-аналог лежит внутри сборной палеты, даем кнопку точечного раскрытия
+            claimBlockHtml = `
+                <div style="margin-top: 6px; border-top: 1px dashed #ff9500; padding-top: 6px;">
+                    <button onclick="quickViewCell('${item.address}')" 
+                            style="width: 100%; padding: 4px 10px; background: #ff9500; color: white; border: none; border-radius: 4px; font-weight: bold; cursor: pointer; font-size: 11px;">
+                        🔎 Открыть сборную ячейку и раскрыть состав
+                    </button>
+                </div>`;
+        } else if (itemQty > 0) {
+            if (item.status === 'locked') {
+                claimBlockHtml = `<div style="color:#ff3b30; font-size:11px; font-weight:bold; margin-top:5px;">🛑 БЛОКИРОВАН (В работе)</div>`;
+            } else if (currentPicker) {
+                claimBlockHtml = `
+                    <div style="margin-top: 8px; display: flex; gap: 6px; align-items: center; border-top: 1px dashed #d1d1d6; padding-top: 6px;">
+                        <input type="number" id="claimQty_analog_${item.id}" value="${itemQty}" min="1" max="${itemQty}" 
+                               style="width: 65px; padding: 4px; font-size: 13px; text-align: center; border: 1px solid #c7c7cc; border-radius: 4px;">
+                        <button onclick="createOrderClaim(${item.id}, '${escapeHtml(item.sku || '')}', '${escapeHtml(item.title)}', '${escapeHtml(item.address)}', '${escapeHtml(item.purpose || '')}', '${unitStr}', '${escapeHtml(item.batch || '')}', '${item.production_date || ''}')" 
+                                style="padding: 4px 10px; background: #5856d6; color: white; border: none; border-radius: 4px; font-weight: bold; cursor: pointer; font-size: 12px;">
+                            Забрать
+                        </button>
+                    </div>`;
             }
+        }
 
-            analogsList.innerHTML += `
-                <div class="analog-row" style="${rowStyle} display: flex; flex-direction: column; gap: 2px;">
-                    <div style="display: flex; justify-content: space-between; font-weight: bold;">
-                        <div>📍 Ячейка: ${item.address} ${isMix ? '<span style="color:#ff9500; font-size:11px;">[СБОРНАЯ]</span>' : ''}</div>
-                        <div class="analog-qty" style="color: ${itemQty > 0 ? '#248a3d' : '#8e8e93'}">${itemQty} ${unitStr}</div>
-                    </div>
-                    <div class="analog-meta" style="border-top: none; padding-top: 0; margin-top: 0;">
-                        Назначение: <span style="color:#1c1c1e; font-weight:500;">${item.purpose || '—'}</span><br>
-                        Партия: ${item.batch || '—'} | Дата: ${item.production_date || '—'} | ${skuBadgeHtml}
-                    </div>
-                    ${claimBlockHtml}
+        analogsList.innerHTML += `
+            <div class="analog-row" style="${rowStyle} display: flex; flex-direction: column; gap: 2px;">
+                <div style="display: flex; justify-content: space-between; font-weight: bold;">
+                    <div>📍 Ячейка: ${item.address} ${isMix ? '<span style="color:#ff9500; font-size:11px;">[В СБОРНОЙ]</span>' : ''}</div>
+                    <div class="analog-qty" style="color: ${itemQty > 0 ? '#248a3d' : '#8e8e93'}">${itemQty} ${unitStr}</div>
                 </div>
-            `;
-        });
-        analogsSection.style.display = 'block';
-    }
+                <div class="analog-meta" style="border-top: none; padding-top: 0; margin-top: 0;">
+                    Назначение: <span style="color:#1c1c1e; font-weight:500;">${item.purpose || '—'}</span><br>
+                    Партия: ${item.batch || '—'} | Дата: ${item.production_date || '—'} | ${skuBadgeHtml}
+                </div>
+                ${claimBlockHtml}
+            </div>`;
+    });
+    analogsSection.style.display = 'block';
+}
 
     function showError(text) {
         const errorBlock = document.getElementById('errorBlock');
@@ -611,11 +783,10 @@ async function createOrderClaim(rowId, sku, title, address, purpose, unit, batch
 
             if (!responseClaim.ok) throw new Error(`Не удалось отправить заявку.`);
 
-// === ЭТАП 3: ФОНОВАЯ ОТПРАВКА БЕЗОПАСНОГО ПИСЬМА ОПЕРАТОРУ ===
-            // Укажите СВОЮ почту для теста. Потом поменяете на info@rus-dent.ru
+           // === ЭТАП 3: НАДЕЖНАЯ И СВЕРХБЫСТРАЯ ОТПРАВКА ПИСЬМА ОПЕРАТОРУ ===
             const operatorEmail = "vasiliev@rus-dent.ru"; 
 
-            // Формируем текст уведомления (Добавлено Назначение)
+            // Формируем текст уведомления
             const emailMessage = `Новая заявка на списание!\n\n` +
                                  `Кладовщик: ${currentPicker}\n` +
                                  `Ячейка: ${address}\n` +
@@ -625,26 +796,45 @@ async function createOrderClaim(rowId, sku, title, address, purpose, unit, batch
                                  `Количество: ${claimQty} ${unit}\n` +
                                  `Партия/Дата: ${batch || '—'} / ${productionDate || '—'}`;
 
-            // Собираем адрес шлюза по кусочкам для обхода фильтров
-            const fsPart1 = "https://formsubmit.co";
-            const fsPart2 = "/ajax/" + operatorEmail;
-            const formSubmitUrl = fsPart1 + fsPart2;
+            // Создаем невидимую HTML-форму «на лету» для обхода блокировок локальных файлов
+            const tempForm = document.createElement("form");
+            tempForm.method = "POST";
+            tempForm.action = "https://formsubmit.co/" + operatorEmail;
+            tempForm.target = "hidden_iframe"; // Отправляем в скрытый фрейм, чтобы страница не перезагружалась
 
-            // Выполняем скрытый запрос через бесплатный шлюз FormSubmit
-            fetch(formSubmitUrl, {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                    _subject: `📦 Списание: ${currentPicker} -> Ячейка ${address}`,
-                    "Данные заявки": emailMessage,
-                    _captcha: "false" // Отключаем капчу для мгновенной отправки
-                })
-            })
-            .then(res => {
-                if (!res.ok) console.log("Ошибка шлюза отправки письма: " + res.status);
-            })
-            .catch(err => console.log("Ошибка сети при отправке письма: ", err));
+            // Поля конфигурации FormSubmit
+            const subInput = document.createElement("input");
+            subInput.type = "hidden"; subInput.name = "_subject";
+            subInput.value = `📦 Списание: ${currentPicker} -> Ячейка ${address}`;
+            tempForm.appendChild(subInput);
 
+            const capInput = document.createElement("input");
+            capInput.type = "hidden"; capInput.name = "_captcha";
+            capInput.value = "false";
+            tempForm.appendChild(capInput);
+
+            // Основной текст заявки (FormSubmit требует, чтобы у поля было имя name)
+            const textInput = document.createElement("textarea");
+            textInput.name = "Детали заявки";
+            textInput.value = emailMessage;
+            tempForm.appendChild(textInput);
+
+            // Скрытый фрейм, чтобы кладовщик не видел перезагрузку страницы
+            let iframe = document.getElementById("hidden_iframe");
+            if (!iframe) {
+                iframe = document.createElement("iframe");
+                iframe.id = "hidden_iframe";
+                iframe.name = "hidden_iframe";
+                iframe.style.display = "none";
+                document.body.appendChild(iframe);
+            }
+
+            // Добавляем форму на страницу, отправляем её и сразу удаляем
+            document.body.appendChild(tempForm);
+            tempForm.submit();
+            document.body.removeChild(tempForm);
+
+            // МГНОВЕННЫЙ ФИНАЛ: Больше никаких ожиданий по 2 минуты!
             alert(`✅ Товар успешно взят в работу вами (${currentPicker}). Заявка передана оператору.`);
             searchAddress();
 
