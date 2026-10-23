@@ -110,8 +110,9 @@ window.addEventListener('DOMContentLoaded', async () => {
         });
         const data = await response.json();
 
-        if (data.length > 0) {
-            currentPicker = data[0].name;
+        // ИСПРАВЛЕНО: Читаем первый элемент массива [0]
+        if (data && data.length > 0) {
+            currentPicker = data[0].name; 
             statusText.innerHTML = `👤 Сотрудник: <strong>${currentPicker}</strong> (Списания открыты)`;
             statusBar.style.backgroundColor = "#e6f4ea";
             statusText.style.color = "#248a3d";
@@ -200,8 +201,9 @@ async function executeSecureLogin(secretQrValue) {
         });
         const data = await response.json();
 
-        if (data.length > 0) {
-            const picker = data[0];
+        // ИСПРАВЛЕНО: Читаем первый элемент массива [0]
+        if (data && data.length > 0) {
+            const picker = data[0]; 
             
             // 2. Генерируем уникальный токен для этого смартфона
             const generatedToken = 'tk_' + picker.name.toLowerCase() + '_' + Math.random().toString(36).substring(2, 15);
