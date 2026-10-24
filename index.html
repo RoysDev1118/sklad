@@ -471,6 +471,15 @@ function renderItemCard(container, targetItem, forceOrange = false) {
             ${actionBlockHtml}
         </div>`;
 }
+    // Вспомогательная техническая функция защиты от кавычек в тексте
+function escapeHtml(string) {
+    return String(string)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+}
     // ==================================================
 // Вспомогательная функция для раскрытия состава
 function quickViewCell(address, targetIds = null) {
