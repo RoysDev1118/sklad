@@ -81,7 +81,7 @@
         <div id="analogsList"></div>
     </div>
 
-    <div class="version-tag">сборка: 1.4.0 (secure device token)</div>
+    <div class="version-tag">сборка: 1.4.1 (secure device token)</div>
 </div>
 <script>
     // ==================================================
@@ -309,6 +309,7 @@ async function searchAddress() {
 }
     // ==================================================
 // === ИСПОЛНИТЕЛЬ СЦЕНАРИЯ 3: ПОИСК КОНКРЕТНОЙ ЯЧЕЙКИ ===
+// === УНИВЕРСАЛЬНЫЙ ИСПОЛНИТЕЛЬ ПОИСКА АДРЕСА / ЗОНЫ ===
 async function executeCellSearch(addressValue) {
     const addressHeader = document.getElementById('addressHeader');
     const productsContainer = document.getElementById('productsContainer');
@@ -327,10 +328,12 @@ async function executeCellSearch(addressValue) {
             return;
         }
 
-        // Если с гибридного поиска/аналогов пришел конкретный массив ID для раскрытия палета
+        // ФЛАГ: Проверяем, пришли ли мы сюда по кнопке точечного раскрытия палета
+        let isExplicitlyExpanded = false;
         if (window.nextSearchTargetIds && Array.isArray(window.nextSearchTargetIds)) {
             validItems = validItems.filter(item => window.nextSearchTargetIds.includes(item.id));
             window.nextSearchTargetIds = null; // сбрасываем триггер
+            isExplicitlyExpanded = true;       // палет раскрыт принудительно!
         }
 
         document.getElementById('targetAddressTitle').innerText = addressValue.toUpperCase();
@@ -340,55 +343,54 @@ async function executeCellSearch(addressValue) {
         const isUnstructuredZone = addressValue.length <= 3;
 
         if (isUnstructuredZone) {
-            // =========================================================================
-            // ЛОГИКА ДЛЯ БЕЗАДРЕСНЫХ ЗОН (Длина <= 3: Схлопываем палеты паровозиком по ID)
-            // =========================================================================
-            validItems.sort((a, b) => a.id - b.id); // Восстанавливаем хронологический порядок строк
+            validItems.sort((a, b) => a.id - b.id); // Восстанавливаем порядок строк
 
-            let i = 0;
-            let groupCounter = 1;
+            if (isExplicitlyExpanded) {
+                // КЕЙС 1: Палет уже точечно раскрыт. Выводим позиции открыто (оранжевый цвет)
+                validItems.forEach(targetItem => {
+                    renderItemCard(productsContainer, targetItem, true);
+                });
+            } else {
+                // КЕЙС 2: Обычный заход в зону. Схлопываем палеты паровозиком.
+                let i = 0;
+                let groupCounter = 1;
 
-            while (i < validItems.length) {
-                let currentItem = validItems[i];
-                let purpose = (currentItem.purpose || '').trim();
+                while (i < validItems.length) {
+                    let currentItem = validItems[i];
+                    let purpose = (currentItem.purpose || '').trim();
 
-                if (purpose === 'СБХран') {
-                    let mixBlockItems = [currentItem];
-                    i++;
-                    while (i < validItems.length && (validItems[i].purpose || '').trim() === 'СБХран+') {
-                        mixBlockItems.push(validItems[i]);
+                    if (purpose === 'СБХран') {
+                        let mixBlockItems = [currentItem];
+                        i++;
+                        while (i < validItems.length && (validItems[i].purpose || '').trim() === 'СБХран+') {
+                            mixBlockItems.push(validItems[i]);
+                            i++;
+                        }
+
+                        const stringifiedIds = JSON.stringify(mixBlockItems.map(item => item.id));
+
+                        productsContainer.innerHTML += `
+                            <div class="result-card multi-item" style="border-left-color: #ff9500; background-color: #fff9f0;">
+                                <div class="result-item" style="font-size: 16px; color: #ff9500;"><strong>📍 Зона:</strong> <span style="font-weight: bold;">${currentItem.address}</span></div>
+                                <div class="result-item" style="font-weight: bold; color: #d97706; margin-top: 5px;">⚠️ СБОРНЫЙ ПАЛЕТ №${groupCounter} (${mixBlockItems.length} поз.)</div>
+                                <div class="result-item" style="font-size: 12px; color: #7f8c8d;">Содержит артикулы: ${mixBlockItems.map(b => b.sku || 'без арт.').join(', ')}</div>
+                                <button onclick='quickViewCell("${currentItem.address}", ${stringifiedIds})' style="margin-top:8px; width:100%; padding:8px; background:#ff9500; color:white; border:none; border-radius:6px; font-weight:bold; cursor:pointer; font-size:13px;">🔎 Раскрыть только этот палет</button>
+                            </div>`;
+                        groupCounter++;
+                    } else {
+                        renderItemCard(productsContainer, currentItem, false);
                         i++;
                     }
-
-                    const stringifiedIds = JSON.stringify(mixBlockItems.map(item => item.id));
-
-                    productsContainer.innerHTML += `
-                        <div class="result-card multi-item" style="border-left-color: #ff9500; background-color: #fff9f0;">
-                            <div class="result-item" style="font-size: 16px; color: #ff9500;"><strong>📍 Зона:</strong> <span style="font-weight: bold;">${currentItem.address}</span></div>
-                            <div class="result-item" style="font-weight: bold; color: #d97706; margin-top: 5px;">⚠️ СБОРНЫЙ ПАЛЕТ №${groupCounter} (${mixBlockItems.length} поз.)</div>
-                            <div class="result-item" style="font-size: 12px; color: #7f8c8d;">Содержит артикулы: ${mixBlockItems.map(b => b.sku || 'без арт.').join(', ')}</div>
-                            <button onclick='quickViewCell("${currentItem.address}", ${stringifiedIds})' style="margin-top:8px; width:100%; padding:8px; background:#ff9500; color:white; border:none; border-radius:6px; font-weight:bold; cursor:pointer; font-size:13px;">🔎 Раскрыть только этот палет</button>
-                        </div>`;
-                    groupCounter++;
-                } else {
-                    // Обычное одиночное «Хранение»
-                    renderItemCard(productsContainer, currentItem);
-                    i++;
                 }
             }
-
-            // Намертво отключаем аналоги для безадресных зон
-            analogsSection.style.display = 'none';
+            analogsSection.style.display = 'none'; // Отключаем аналоги в зонах
 
         } else {
-            // =========================================================================
             // ЛОГИКА ДЛЯ АДРЕСНЫХ ЯЧЕЕК СТЕЛЛАЖЕЙ (Выводим всё открыто)
-            // =========================================================================
             validItems.forEach(targetItem => {
-                renderItemCard(productsContainer, targetItem);
+                renderItemCard(productsContainer, targetItem, false);
             });
 
-            // Для ячеек стеллажей подгружаем сквозные аналоги по первому товару
             const singleProductTitle = validItems[0].title;
             const responseAnalogs = await fetch(`${SUPABASE_URL}/rest/v1/test_products?title=eq.${encodeURIComponent(singleProductTitle)}&address=neq.${encodeURIComponent(addressValue)}`, {
                 headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}` }
@@ -402,26 +404,27 @@ async function executeCellSearch(addressValue) {
                     if (dateA !== dateB) return dateA - dateB;
                     return (a.quantity !== null ? a.quantity : 0) - (b.quantity !== null ? b.quantity : 0);
                 });
-
                 const cellAddresses = [...new Set(analogsData.map(item => item.address))];
                 renderAnalogsListWithMixCheck(analogsData, cellAddresses);
             } else {
                 analogsSection.style.display = 'none';
             }
         }
-
     } catch (error) { showError(`Ошибка: ${error.message}`); }
 }
 
 // Внутренняя функция для чистой отрисовки карточки товара со списанием
-function renderItemCard(container, targetItem) {
+function renderItemCard(container, targetItem, forceOrange = false) {
     let skuHtml = targetItem.sku && targetItem.sku !== '0' && targetItem.sku.trim() !== '' 
         ? `<span class="sku-badge">${targetItem.sku}</span>` 
         : '<span class="sku-none">без артикула</span>';
 
     const displayUnit = targetItem.unit ? targetItem.unit : 'шт.';
     const itemPurpose = (targetItem.purpose || '').trim();
-    const cardClass = (itemPurpose === 'СБХран' || itemPurpose === 'СБХран+') ? 'result-card multi-item' : 'result-card';
+    
+    // Принудительно красим в оранжевый цвет, если палет был раскрыт точечно
+    const isMixColor = forceOrange || (itemPurpose === 'СБХран' || itemPurpose === 'СБХран+');
+    const cardClass = isMixColor ? 'result-card multi-item' : 'result-card';
     
     let actionBlockHtml = '';
     const itemQty = targetItem.quantity !== null ? targetItem.quantity : 0;
@@ -431,13 +434,16 @@ function renderItemCard(container, targetItem) {
             <div style="margin-top: 12px; padding: 10px; background: #ffe5e5; border-radius: 6px; border: 1px solid #ff3b30; color: #ff3b30; font-size: 13px; font-weight: bold; text-align: center;">
                 🛑 ПАЛЕТА БЛОКИРОВАНА: Уже взята в работу!
             </div>`;
-    } else if (itemQty > 0) {
+    } else if (itemQty > 0 || itemPurpose === 'Комплектация') {
+        const maxAttr = itemQty > 0 ? `max="${itemQty}"` : '';
+        const valAttr = itemQty > 0 ? `value="${itemQty}"` : 'value="1"';
+
         if (currentPicker) {
             actionBlockHtml = `
                 <div style="margin-top: 15px; padding-top: 12px; border-top: 1px dashed #c7c7cc; display: flex; flex-direction: column; gap: 8px;">
                     <div style="font-size: 12px; font-weight: bold; color: #5856d6; text-transform: uppercase;">Списание позиции:</div>
                     <div style="display: flex; gap: 8px; align-items: center;">
-                        <input type="number" id="claimQty_${targetItem.id}" value="${itemQty}" min="1" max="${itemQty}" 
+                        <input type="number" id="claimQty_${targetItem.id}" ${valAttr} min="1" ${maxAttr} 
                                style="width: 80px; margin-bottom: 0; padding: 8px; font-size: 15px; letter-spacing: 0; text-align: center;">
                         <span style="font-size: 14px; color: #505050; font-weight: 500;">${displayUnit}</span>
                         <button onclick="createOrderClaim(${targetItem.id}, '${escapeHtml(targetItem.sku || '')}', '${escapeHtml(targetItem.title)}', '${escapeHtml(targetItem.address)}', '${escapeHtml(targetItem.purpose || '')}', '${displayUnit}', '${escapeHtml(targetItem.batch || '')}', '${targetItem.production_date || ''}')"  
@@ -459,17 +465,12 @@ function renderItemCard(container, targetItem) {
             <div class="result-item"><strong>Артикул:</strong> ${skuHtml}</div>
             <div class="result-item"><strong>Наименование продукции:</strong> <span style="font-weight: 500;">${targetItem.title}</span></div>
             <div class="result-item"><strong>Назначение:</strong> <span>${targetItem.purpose || '—'}</span></div>
-            <div class="result-item"><strong>Количество здесь:</strong> <span>${itemQty} ${displayUnit}</span></div>
+            <div class="result-item"><strong>Количество здесь:</strong> <span>${itemQty > 0 ? itemQty + ' ' + displayUnit : '—'}</span></div>
             <div class="result-item"><strong>Партия:</strong> <span>${targetItem.batch || '—'}</span></div>
             <div class="result-item"><strong>Дата производства:</strong> <span>${targetItem.production_date || '—'}</span></div>
             ${actionBlockHtml}
         </div>`;
 }
-
-    // Вспомогательная техническая функция защиты от кавычек в тексте
-    function escapeHtml(string) {
-        return String(string).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
-    }
     // ==================================================
 // Вспомогательная функция для раскрытия состава
 function quickViewCell(address, targetIds = null) {
