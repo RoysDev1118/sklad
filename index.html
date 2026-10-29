@@ -144,8 +144,8 @@
             if (data && data.length > 0) {
                 const meta = data[0];
                 const dateObj = new Date(meta.date_load);
-                const formattedDate = dateObj.toLocaleDateString('ru-RU') + ' ' + 
-                                      dateObj.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
+                const formattedDate = dateObj.toLocaleDateString('ru-RU',{ timeZone: 'UTC' }) + ' ' + 
+                                      dateObj.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit', {timeZone: 'UTC'});
                 metaBar.innerHTML = `База от: <strong>${formattedDate}</strong> | Файл: <strong>${meta.name_nsgp}</strong>`;
             } else {
                 metaBar.innerText = "Данные об актуальности базы отсутствуют.";
