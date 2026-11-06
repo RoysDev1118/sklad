@@ -1065,6 +1065,57 @@
             playErrorBeep();
         }
     }
+// === ЛОГИКА УСТАНОВКИ PWA ПРИЛОЖЕНИЯ ===
+let deferredPrompt;
+const installBtn = document.getElementById('pwaInstallBtn');
+
+// 1. Ловим системное событие готовности к установке
+window.addEventListener('beforeinstallprompt', (e) => {
+    // Предотвращаем автоматический показ мини-инфобара браузера
+    e.preventDefault();
+    // Сохраняем событие, чтобы вызвать его позже по нажатию кнопки
+    deferredPrompt = e;
+    // Показываем кнопку в интерфейсе
+    if (installBtn) {
+        installBtn.style.display = 'flex';
+    }
+});
+
+// 2. Обрабатываем клик по кнопке
+if (installBtn) {
+    installBtn.addEventListener('click', async () => {
+        if (!deferredPrompt) return;
+        
+        // Показываем встроенное окно установки от браузера
+        deferredPrompt.prompt();
+        
+        // Ждем ответа пользователя
+        const { outcome } = await deferredPrompt.userChoice;
+        console.log(`Результат установки: ${outcome}`);
+        
+        // Очищаем переменную, событие можно использовать только один раз
+        deferredPrompt = null;
+        // Прячем кнопку, так как пользователь уже сделал выбор
+        installBtn.style.display = 'none';
+    });
+}
+
+// 3. Если приложение уже успешно установлено (или было установлено ранее)
+window.addEventListener('appinstalled', (evt) => {
+    console.log('Складской поиск+ успешно установлен на устройство!');
+    if (installBtn) {
+        installBtn.style.display = 'none';
+    }
+});
+
+// 4. Регистрация Service Worker (обязательно для PWA)
+if ('serviceWorker' in navigator) {
+    window.addEventListener('load', () => {
+        navigator.serviceWorker.register('sw.js')
+            .then(reg => console.log('SW зарегистрирован!', reg))
+            .catch(err => console.error('Ошибка SW:', err));
+    });
+}
 </script>
 </body>
 </html>
