@@ -87,13 +87,41 @@
     <div id="addressHeader" class="address-header">Ячейка: <span id="targetAddressTitle">-</span></div>
     
     <div id="productsContainer"></div>
+   <!-- ВКЛАДКИ НАВИГАЦИИ -->
+    <div style="display: flex; gap: 10px; margin-top: 15px; width: 100%;">
+        <button id="tabSearchBtn" onclick="switchTab('search')" style="flex: 1; padding: 12px; background: #007aff; color: white; border: none; border-radius: 8px; font-weight: bold; cursor: pointer;">📦 Поиск</button>
+        <button id="tabChatBtn" onclick="switchTab('chat')" style="flex: 1; padding: 12px; background: #e5e5ea; color: #1c1c1e; border: none; border-radius: 8px; font-weight: bold; cursor: pointer; position: relative;">
+            💬 Чат смен
+            <span id="chatBadge" style="display: none; position: absolute; top: -5px; right: -5px; background: #ff3b30; color: white; border-radius: 50%; padding: 3px 7px; font-size: 11px; font-weight: bold; min-width: 18px; text-align: center;">0</span>
+        </button>
+    </div>
 
+    <!-- КОНТЕЙНЕР ДЛЯ ЭКРАНА ЧАТА -->
+    <div id="chatSection" style="display: none; margin-top: 15px; width: 100%;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+            <div style="font-size: 14px; font-weight: bold; color: #3a3a3c; text-transform: uppercase;">Системные сообщения:</div>
+            <button onclick="markAllMessagesAsRead()" style="padding: 6px 10px; background: #e5e5ea; border: none; border-radius: 6px; font-size: 12px; cursor: pointer; font-weight: 500;">Прочитать все</button>
+        </div>
+        
+        <!-- Настройки для Начальника склада -->
+        <div id="managerSettingsBlock" style="display: none; background: #fff9f0; border: 1px solid #ff9500; padding: 10px; border-radius: 8px; margin-bottom: 10px; font-size: 13px;">
+            <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                <input type="checkbox" id="managerNotifyToggle" onchange="toggleManagerNotifications()" checked>
+                <span>Получать уведомления о действиях кладовщиков</span>
+            </label>
+        </div>
+
+        <div id="chatMessagesContainer" style="max-height: 350px; overflow-y: auto; display: flex; flex-direction: column; gap: 8px; padding-right: 2px;">
+            <!-- Сюда будут динамически падать сообщения -->
+            <div style="text-align: center; color: #8e8e93; font-style: italic; font-size: 13px; padding: 20px;">Нет сообщений за текущую смену</div>
+        </div>
+    </div>
     <div id="analogsSection" class="analogs-section">
         <div class="analogs-title">Также этот товар лежит в ячейках:</div>
         <div id="analogsList"></div>
     </div>
 
-    <div class="version-tag">сборка: 1.4.3 (Meta Sync + WFM)</div>
+   <div class="version-tag">сборка: 1.5.0 (WMS Chat + Roles)</div>
 </div>
 
 <script>
@@ -103,7 +131,10 @@
     let videoStream = null;
     let currentPicker = null; 
     let pickerStatus = "отдыхаю"; // По умолчанию закрыт для списаний
-
+    let currentRole = "Кладовщик"; 
+    let activeTab = "search";
+    let chatIntervalId = null;
+    let lastSeenMessageId = parseInt(localStorage.getItem('wms_last_msg_id') || '0', 10);
     // ЗВУКОВОЙ СИГНАЛ ОШИБКИ (Web Audio API)
     function playErrorBeep() {
         try {
@@ -129,7 +160,38 @@
             console.error("Ошибка воспроизведения звука:", e);
         }
     }
+   // ЗВУКОВОЙ СИГНАЛ НОВОГО СООБЩЕНИЯ (Заданный паттерн с максимальной громкостью)
+    function playNotificationSound() {
+        try {
+            const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+            const pattern = [[587, 0.08, 0.03], [587, 0.08, 0.03], [880, 0.40, 0]];
+            
+            triggerVibration([100, 50, 100, 50, 300]); // Синхронный виброотклик
 
+            pattern.forEach((note, index) => {
+                const frequency = note[0];
+                const duration = note[1] * 1000;
+                const delay = pattern.slice(0, index).reduce((acc, curr) => acc + (curr[1] + curr[2]) * 1000, 0);
+
+                setTimeout(() => {
+                    const oscillator = audioCtx.createOscillator();
+                    const gainNode = audioCtx.createGain();
+                    oscillator.type = 'sine';
+                    oscillator.frequency.value = frequency;
+                    
+                    // Максимальная громкость
+                    gainNode.gain.setValueAtTime(1.0, audioCtx.currentTime);
+                    
+                    oscillator.connect(gainNode);
+                    gainNode.connect(audioCtx.destination);
+                    oscillator.start();
+                    setTimeout(() => oscillator.stop(), duration);
+                }, delay);
+            });
+        } catch (e) {
+            console.error("Ошибка звука уведомления:", e);
+        }
+    }
     // ТАКТИЛЬНЫЙ ОТКЛИК (Вибрация)
     function triggerVibration(duration) {
         if (navigator.vibrate) {
@@ -183,11 +245,13 @@
             });
             const data = await response.json();
 
-            if (data && data.length > 0) {
+           if (data && data.length > 0) {
                 const employee = data[0];
                 currentPicker = employee.name;
                 pickerStatus = employee.status || "отдыхаю";
+                currentRole = employee.role || "Кладовщик"; // Считываем роль из БД
                 updateAuthUiVisuals();
+                manageChatPolling(); // Запуск или остановка опроса чата в зависимости от статуса смены
             } else {
                 localStorage.removeItem('wms_secure_token');
                 setViewingMode();
@@ -211,18 +275,23 @@
     function updateAuthUiVisuals() {
         const statusText = document.getElementById('authStatusText');
         const statusBar = document.getElementById('secureAuthBar');
+        const managerBlock = document.getElementById('managerSettingsBlock');
         
+        // Показываем настройки только Начальнику склада
+        if (managerBlock) {
+            managerBlock.style.display = (currentRole === "ЗавСклад") ? "block" : "none";
+        }
+
         if (pickerStatus === "работаю") {
-            statusText.innerHTML = `👤 Сотрудник: <strong>${currentPicker}</strong> (В РАБОТЕ)`;
+            statusText.innerHTML = `👤 [${currentRole}] <strong>${currentPicker}</strong> (В РАБОТЕ)`;
             statusBar.style.backgroundColor = "#e6f4ea";
             statusText.style.color = "#248a3d";
         } else {
-            statusText.innerHTML = `👤 Сотрудник: <strong>${currentPicker}</strong> (ОТДЫХАЮ)`;
+            statusText.innerHTML = `👤 [${currentRole}] <strong>${currentPicker}</strong> (ОТДЫХАЮ)`;
             statusBar.style.backgroundColor = "#f2f2f7";
             statusText.style.color = "#8e8e93";
         }
     }
-
     function triggerManualSearch() {
         triggerVibration(50);
         searchAddress();
@@ -463,6 +532,9 @@
                 'Prefer': 'return=minimal'
             },
             body: JSON.stringify({ status: newStatus })
+            }).then(() => {
+            manageChatPolling();
+        });
         });
     }
 
@@ -1053,7 +1125,22 @@
             });
 
             if (!responseClaim.ok) throw new Error(`Не удалось отправить заявку в базу.`);
-
+            // ЭТАП 2.5: Отправляем системное уведомление в чат для Операторов и Начальников
+            await fetch(`${SUPABASE_URL}/rest/v1/wms_messages`, {
+                method: 'POST',
+                headers: {
+                    'apikey': SUPABASE_KEY,
+                    'Authorization': `Bearer ${SUPABASE_KEY}`,
+                    'Content-Type': 'application/json',
+                    'Prefer': 'return=minimal'
+                },
+                body: JSON.stringify({
+                    target_role: 'Операторы и Руководство',
+                    text: `📥 Кладовщик ${currentPicker} взял в работу товар "${title}" (${claimQty} ${unit}) из ячейки ${address}.`,
+                    trigger_by: currentPicker,
+                    address: address
+                })
+            });
             // === ЭТАП 3: МОДУЛЬ ОПЕРАТОРА (ВЫРЕЗАН И ЗАМЕНЕН ЗАГЛАДКОЙ) ===
             // TODO: Модуль отправки уведомлений. Прорабатывается в отдельном проекте
 
@@ -1064,6 +1151,185 @@
             alert(`❌ Произошла ошибка: ${error.message}`);
             playErrorBeep();
         }
+    }
+        // ПЕРЕКЛЮЧЕНИЕ ВКЛАДОК (SPA Логика)
+    function switchTab(tabName) {
+        activeTab = tabName;
+        const searchBtn = document.getElementById('tabSearchBtn');
+        const chatBtn = document.getElementById('tabChatBtn');
+        const chatSection = document.getElementById('chatSection');
+        
+        // Элементы стандартного поиска, которые нужно скрыть на экране чата
+        const searchElements = [
+            document.getElementById('toggleScanBtn'),
+            document.getElementById('videoContainer'),
+            document.querySelector('.divider'),
+            document.getElementById('addressInput'),
+            document.querySelector('.search-btn'),
+            document.getElementById('addressHeader'),
+            document.getElementById('productsContainer'),
+            document.getElementById('analogsSection')
+        ];
+
+        if (tabName === 'chat') {
+            searchBtn.style.background = '#e5e5ea'; searchBtn.style.color = '#1c1c1e';
+            chatBtn.style.background = '#007aff'; chatBtn.style.color = 'white';
+            chatSection.style.display = 'block';
+            searchElements.forEach(el => { if(el) el.style.display = 'none'; stopCamera(); });
+            
+            // Как только открыли чат — считаем, что всё увидели
+            markAllMessagesAsRead();
+        } else {
+            searchBtn.style.background = '#007aff'; searchBtn.style.color = 'white';
+            chatBtn.style.background = '#e5e5ea'; chatBtn.style.color = '#1c1c1e';
+            chatSection.style.display = 'none';
+            
+            // Возвращаем базовые элементы поиска
+            if(document.getElementById('toggleScanBtn')) document.getElementById('toggleScanBtn').style.display = 'flex';
+            if(document.querySelector('.divider')) document.querySelector('.divider').style.display = 'block';
+            if(document.getElementById('addressInput')) document.getElementById('addressInput').style.display = 'block';
+            if(document.querySelector('.search-btn')) document.querySelector('.search-btn').style.display = 'block';
+            if(document.getElementById('productsContainer')) document.getElementById('productsContainer').style.display = 'block';
+        }
+    }
+
+    // УПРАВЛЕНИЕ ФОНОВЫМ ОПРОСОМ ЧАТА (Буферизация, если не на смене)
+    function manageChatPolling() {
+        if (pickerStatus === "работаю") {
+            if (!chatIntervalId) {
+                // Сразу загружаем актуальные сообщения за смену
+                fetchNewMessages();
+                // Ставим на регулярный опрос каждые 5 секунд
+                chatIntervalId = setInterval(fetchNewMessages, 5000);
+            }
+        } else {
+            if (chatIntervalId) {
+                clearInterval(chatIntervalId);
+                chatIntervalId = null;
+            }
+            // Сбрасываем визуальный badge при выходе со смены
+            document.getElementById('chatBadge').style.display = 'none';
+        }
+    }
+
+    // ПОЛУЧЕНИЕ СООБЩЕНИЙ ИЗ SUPABASE С УЧЕТОМ РОЛИ
+    async fn fetchNewMessages() {
+        if (!currentPicker || pickerStatus !== "работаю") return;
+
+        try {
+            // Загружаем сообщения за последние 24 часа для предотвращения перегрузки
+            const timeLimit = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+            
+            const response = await fetch(`${SUPABASE_URL}/rest/v1/wms_messages?created_at=gt.${timeLimit}&order=id.desc`, {
+                headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}` }
+            });
+            const messages = await response.json();
+            if (!messages || messages.length === 0) return;
+
+            // ФИЛЬТРАЦИЯ НА СТОРОНЕ КЛИЕНТА ПО РОЛЯМ
+            let filtered = messages.filter(msg => {
+                // Обычный кладовщик видит только глобальные сообщения 'all'
+                if (currentRole === 'Кладовщик') {
+                    return msg.target_role === 'all';
+                }
+                // Оператор видит свои и общие
+                if (currentRole === 'Оператор') {
+                    return msg.target_role === 'all' || msg.target_role === 'Операторы и Руководство';
+                }
+                // ЗавСклад видит всё, если включена галка в настройках
+                if (currentRole === 'ЗавСклад') {
+                    const isNotifyEnabled = document.getElementById('managerNotifyToggle')?.checked;
+                    if (!isNotifyEnabled && msg.target_role === 'Операторы и Руководство') return false;
+                    return true;
+                }
+                return false;
+            });
+
+            renderChatMessages(filtered);
+        } catch (err) {
+            console.error("Ошибка обновления чата:", err);
+        }
+    }
+
+    // ОТРИСОВКА ЛЕНТЫ СООБЩЕНИЙ И ОБНОВЛЕНИЕ ШИЛЬДИКА
+    function renderChatMessages(messages) {
+        const container = document.getElementById('chatMessagesContainer');
+        const badge = document.getElementById('chatBadge');
+        if (!container) return;
+
+        if (messages.length === 0) {
+            container.innerHTML = `<div style="text-align: center; color: #8e8e93; font-style: italic; font-size: 13px; padding: 20px;">Нет доступных сообщений</div>`;
+            badge.style.display = 'none';
+            return;
+        }
+
+        // Считаем непрочитанные (ID которых больше сохраненного в localStorage)
+        let unreadCount = messages.filter(m => m.id > lastSeenMessageId).length;
+
+        // Если прилетели действительно новые сообщения — играем паттерн звука
+        if (unreadCount > 0 && activeTab !== 'chat') {
+            const maxIdInList = Math.max(...messages.map(m => m.id));
+            if (maxIdInList > lastSeenMessageId) {
+                playNotificationSound();
+                // Временно сдвигаем локальный маркер, чтобы звук не повторялся до клика
+                lastSeenMessageId = maxIdInList; 
+            }
+        }
+
+        // Обновляем шильдик на кнопке вкладки
+        if (unreadCount > 0 && activeTab !== 'chat') {
+            badge.innerText = unreadCount;
+            badge.style.display = 'block';
+        } else if (activeTab === 'chat') {
+            badge.style.display = 'none';
+        }
+
+        // Выводим сообщения в ленту
+        container.innerHTML = '';
+        messages.forEach(msg => {
+            const dateObj = new Date(msg.created_at);
+            const timeStr = dateObj.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
+            
+            // Прочитанные сообщения делаем слегка блеклыми визуально
+            const isRead = msg.id <= parseInt(localStorage.getItem('wms_last_msg_id') || '0', 10);
+            const opacityStyle = isRead ? 'opacity: 0.65;' : 'border-right: 3px solid #007aff; font-weight: 500;';
+
+            container.innerHTML += `
+                <div class="result-card" style="margin-top: 0; padding: 10px; border-left: 4px solid #8e8e93; ${opacityStyle}">
+                    <div style="display: flex; justify-content: space-between; font-size: 11px; color: #8e8e93; margin-bottom: 4px;">
+                        <span>⏱️ ${timeStr} | От: ${msg.trigger_by}</span>
+                        <span style="color:#5856d6;">${msg.target_role}</span>
+                    </div>
+                    <div style="font-size: 14px; color: #1c1c1e;">${msg.text}</div>
+                </div>
+            `;
+        });
+    }
+
+    // ФУНКЦИЯ СБРОСА НЕПРОЧИТАННЫХ И СОХРАНЕНИЯ В LOCALSTORAGE
+    function markAllMessagesAsRead() {
+        const badge = document.getElementById('chatBadge');
+        if (badge) badge.style.display = 'none';
+
+        // Ищем контейнер и берем самый первый (актуальный) элемент из ленты, чтобы зафиксировать его ID
+        const container = document.getElementById('chatMessagesContainer');
+        // Перезапрашиваем последние данные, чтобы точно узнать максимальный ID
+        const timeLimit = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+        fetch(`${SUPABASE_URL}/rest/v1/wms_messages?created_at=gt.${timeLimit}&order=id.desc&limit=1`, {
+            headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}` }
+        }).then(r => r.json()).then(data => {
+            if (data && data.length > 0) {
+                const maxId = data[0].id;
+                localStorage.setItem('wms_last_msg_id', maxId);
+                lastSeenMessageId = maxId;
+            }
+            fetchNewMessages(); // Перерисовываем интерфейс с обновленной прозрачностью
+        });
+    }
+
+    // Галочка для Начальника склада
+    function toggleManagerNotifications() {
+        fetchNewMessages();
     }
 // === ЛОГИКА УСТАНОВКИ PWA ПРИЛОЖЕНИЯ ===
 let deferredPrompt;
