@@ -100,7 +100,7 @@
     <div id="chatSection" style="display: none; margin-top: 15px; width: 100%;">
         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
             <div style="font-size: 14px; font-weight: bold; color: #3a3a3c; text-transform: uppercase;">Системные сообщения:</div>
-            <button onclick="markAllMessagesAsRead()" style="padding: 6px 10px; background: #e5e5ea; border: none; border-radius: 6px; font-size: 12px; cursor: pointer; font-weight: 500;">Прочитать все</button>
+            <button onclick="()" style="padding: 6px 10px; background: #e5e5ea; border: none; border-radius: 6px; font-size: 12px; cursor: pointer; font-weight: 500;">Прочитать все</button>
         </div>
         
         <!-- Настройки для Начальника склада -->
@@ -533,7 +533,7 @@
                 'Prefer': 'return=minimal'
             },
             body: JSON.stringify({ status: newStatus })
-            }).then(() => {
+            }).then(function() {
             manageChatPolling();
         });
         });
@@ -1308,23 +1308,31 @@
     }
 
     // ФУНКЦИЯ СБРОСА НЕПРОЧИТАННЫХ И СОХРАНЕНИЯ В LOCALSTORAGE
+    // ФУНКЦИЯ СБРОСА НЕПРОЧИТАННЫХ И СОХРАНЕНИЯ В LOCALSTORAGE
     function markAllMessagesAsRead() {
         const badge = document.getElementById('chatBadge');
         if (badge) badge.style.display = 'none';
 
-        // Ищем контейнер и берем самый первый (актуальный) элемент из ленты, чтобы зафиксировать его ID
-        const container = document.getElementById('chatMessagesContainer');
-        // Перезапрашиваем последние данные, чтобы точно узнать максимальный ID
+        // Вычисляем временной лимит (последние 24 часа)
         const timeLimit = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+        
+        // Запрашиваем самое последнее сообщение, чтобы узнать максимальный ID
         fetch(`${SUPABASE_URL}/rest/v1/wms_messages?created_at=gt.${timeLimit}&order=id.desc&limit=1`, {
             headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}` }
-        }).then(r => r.json()).then(data => {
+        })
+        .then(function(response) {
+            return response.json();
+        })
+        .then(function(data) {
             if (data && data.length > 0) {
-                const maxId = data[0].id;
+                const maxId = data[0].id; // Исправлено чтение первого элемента массива
                 localStorage.setItem('wms_last_msg_id', maxId);
                 lastSeenMessageId = maxId;
             }
             fetchNewMessages(); // Перерисовываем интерфейс с обновленной прозрачностью
+        })
+        .catch(function(err) {
+            console.error("Ошибка при отметке сообщений:", err);
         });
     }
 
