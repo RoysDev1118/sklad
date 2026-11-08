@@ -160,17 +160,18 @@
             console.error("Ошибка воспроизведения звука:", e);
         }
     }
-   // ЗВУКОВОЙ СИГНАЛ НОВОГО СООБЩЕНИЯ (Заданный паттерн с максимальной громкостью)
+    // ЗВУКОВОЙ СИГНАЛ НОВОГО СООБЩЕНИЯ (Заданный паттерн с максимальной громкостью)
     function playNotificationSound() {
         try {
             const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
             const pattern = [[587, 0.08, 0.03], [587, 0.08, 0.03], [880, 0.40, 0]];
             
-            triggerVibration([100, 50, 100, 50, 300]); // Синхронный виброотклик
+            triggerVibration(150); // Синхронный виброотклик
 
             pattern.forEach((note, index) => {
                 const frequency = note[0];
                 const duration = note[1] * 1000;
+                // Считаем общую задержку для каждой ноты с учетом длительности и паузы
                 const delay = pattern.slice(0, index).reduce((acc, curr) => acc + (curr[1] + curr[2]) * 1000, 0);
 
                 setTimeout(() => {
@@ -1213,7 +1214,7 @@
     }
 
     // ПОЛУЧЕНИЕ СООБЩЕНИЙ ИЗ SUPABASE С УЧЕТОМ РОЛИ
-    async fn fetchNewMessages() {
+    async function fetchNewMessages() {
         if (!currentPicker || pickerStatus !== "работаю") return;
 
         try {
