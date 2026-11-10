@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Складской поиск + Native Сканер</title>
     <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/davidshimjs-qrcodejs@0.0.2/qrcode.min.js"></script>
 <!-- Связь с манифестом PWA -->
 <link rel="manifest" href="manifest.json">
 <!-- Цвет статус-бара на iOS -->
@@ -70,9 +71,18 @@
     <!-- СКРЫТЫЙ ИНДИКАТОР СТАТУСА АВТОРИЗАЦИИ -->
     <div id="secureAuthBar" style="background: #e5e5ea; padding: 10px; border-radius: 8px; margin-bottom: 15px; text-align: center; font-size: 14px; font-weight: 600; color: #636366; display: flex; flex-direction: column; gap: 8px; align-items: center; justify-content: center;">
         <span id="authStatusText">Режим: 👀 Только просмотр</span>
+        <!-- Кнопка для ПК (показывается только в режиме просмотра) -->
+        <button id="linkPcBtn" onclick="startDesktopLinking()" style="display: none; padding: 6px 12px; background-color: #007aff; color: white; border: none; border-radius: 6px; font-size: 12px; font-weight: bold; cursor: pointer;">💻 Войти через телефон</button>
+        
+        <!-- Контейнер для QR-кода сопряжения -->
+        <div id="pcQrContainer" style="display: none; flex-direction: column; align-items: center; gap: 8px; margin-top: 5px; background: white; padding: 10px; border-radius: 8px; border: 1px solid #c7c7cc;">
+            <div id="pcQrCanvas"></div>
+            <span style="font-size: 11px; color: #8e8e93; font-weight: normal;">Отсканируйте этот QR камерой приложения на авторизованном телефоне</span>
+            <button onclick="stopDesktopLinking()" style="padding: 2px 8px; background: #8e8e93; color: white; border: none; border-radius: 4px; font-size: 11px; cursor: pointer;">Отмена</button>
+        </div>
+
         <button id="logoutBtn" onclick="executeManualLogout()" style="display: none; padding: 4px 12px; background-color: #ff3b30; color: white; border: none; border-radius: 6px; font-size: 12px; font-weight: bold; cursor: pointer;">Выйти из учетки</button>
-    </div>
-    
+    </div>    
     <button class="scan-btn" id="toggleScanBtn" onclick="toggleScanner()">📷 Включить сканер</button>
     <div id="videoContainer">
         <video id="webcamVideo" autoplay playsinline muted></video>
@@ -122,7 +132,7 @@
         <div id="analogsList"></div>
     </div>
 
-   <div class="version-tag">сборка: 1.5.1 (Anti-Trash & DB Sync)</div>
+   <div class="version-tag">сборка: 1.6.0 (Anti-Trash, DB Sync & Desktop Link)</div>
 </div>
 
 <script>
@@ -135,6 +145,7 @@
     let currentRole = "Кладовщик"; 
     let activeTab = "search";
     let chatIntervalId = null;
+    let pcLinkIntervalId = null;
     let lastSeenMessageId = parseInt(localStorage.getItem('wms_last_msg_id') || '0', 10);
     // ЗВУКОВОЙ СИГНАЛ ОШИБКИ (Web Audio API)
     function playErrorBeep() {
@@ -287,14 +298,27 @@
         statusBar.style.backgroundColor = "#e5e5ea";
         statusText.style.color = "#636366";
         if (logoutBtn) logoutBtn.style.display = "none";
-    }
+        const linkPcBtn = document.getElementById('linkPcBtn');
+        const linkPcBtn = document.getElementById('linkPcBtn');
+        if (linkPcBtn) {
+            // При сбросе в режим просмотра показываем кнопку только на ПК
+            const isDesktop = window.innerWidth > 768;
+            linkPcBtn.style.display = isDesktop ? "block" : "none";
+        }
+        stopDesktopLinking();
+   }
 
     function updateAuthUiVisuals() {
         const statusText = document.getElementById('authStatusText');
         const statusBar = document.getElementById('secureAuthBar');
         const managerBlock = document.getElementById('managerSettingsBlock');
         const logoutBtn = document.getElementById('logoutBtn');
-        
+        const linkPcBtn = document.getElementById('linkPcBtn');
+        if (linkPcBtn) {
+            // Кнопка покажется только если режим просмотра И это экран ПК (шире 768px)
+            const isDesktop = window.innerWidth > 768;
+            linkPcBtn.style.display = (!currentPicker && isDesktop) ? "block" : "none";
+        }
         if (managerBlock) {
             managerBlock.style.display = (currentRole === "ЗавСклад") ? "block" : "none";
         }
@@ -312,6 +336,63 @@
             statusBar.style.backgroundColor = "#f2f2f7";
             statusText.style.color = "#8e8e93";
         }
+    }
+        // ЛОГИКА ДЛЯ КОМПЬЮТЕРА: Генерация QR и ожидание токена от смартфона
+    function startDesktopLinking() {
+        const qrCanvasDiv = document.getElementById('pcQrCanvas');
+        const qrContainer = document.getElementById('pcQrContainer');
+        const linkPcBtn = document.getElementById('linkPcBtn');
+        
+        qrCanvasDiv.innerHTML = ""; // Очищаем старый QR
+        qrContainer.style.display = "flex";
+        linkPcBtn.style.display = "none";
+
+        // Генерируем уникальный ID сессии для ПК
+        const sessionId = 'pc_' + Math.random().toString(36).substring(2, 15);
+        const qrPayload = 'linkpc:' + sessionId;
+
+        // Отрисовка QR-кода
+        new QRCode(qrCanvasDiv, {
+            text: qrPayload,
+            width: 128,
+            height: 128,
+            correctLevel: QRCode.CorrectLevel.M
+        });
+
+        // Запускаем опрос Supabase раз в 3 секунды в поисках нашего токена
+        if (pcLinkIntervalId) clearInterval(pcLinkIntervalId);
+        pcLinkIntervalId = setInterval(async () => {
+            try {
+                const response = await fetch(`${SUPABASE_URL}/rest/v1/allowed_pickers?desktop_session_id=eq.${sessionId}&is_active=eq.true`, {
+                    headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}` }
+                });
+                const data = await response.json();
+
+                if (data && data.length > 0) {
+                    const employee = data[0];
+                    if (employee.device_token) {
+                        // Токен найден! Сохраняем его на ПК и перезагружаем сессию
+                        localStorage.setItem('wms_secure_token', employee.device_token);
+                        clearInterval(pcLinkIntervalId);
+                        alert(`Успешно сопряжено! Вход выполнен под учетной записью: ${employee.name}`);
+                        location.reload();
+                    }
+                }
+            } catch (err) {
+                console.error("Ошибка опроса сессии сопряжения:", err);
+            }
+        }, 3000);
+    }
+
+    function stopDesktopLinking() {
+        if (pcLinkIntervalId) {
+            clearInterval(pcLinkIntervalId);
+            pcLinkIntervalId = null;
+        }
+        const qrContainer = document.getElementById('pcQrContainer');
+        const linkPcBtn = document.getElementById('linkPcBtn');
+        if (qrContainer) qrContainer.style.display = "none";
+        if (linkPcBtn && !currentPicker) linkPcBtn.style.display = "block";
     }
     function triggerManualSearch() {
         triggerVibration(50);
@@ -400,7 +481,52 @@
             await executeTimeTrackingDoorLogic(rawValue);
             return;
         }
+        // Новая логика: Привязка десктоп-сессии (WhatsApp Web стиль)
+        if (rawValue.startsWith('linkpc:')) {
+            const pcSessionId = rawValue.split(':')[1];
+            if (!currentPicker) {
+                showError("Ошибка: Авторизовать ПК может только вошедший в систему сотрудник!");
+                playErrorBeep();
+                return;
+            }
+            const savedToken = localStorage.getItem('wms_secure_token');
+            if (!savedToken) return;
 
+            if (confirm(`Авторизовать компьютер под вашим именем (${currentPicker})?`)) {
+                try {
+                    // Записываем наш мобильный токен в строку сотрудника, пометив её ID сессии компьютера
+                    const response = await fetch(`${SUPABASE_URL}/rest/v1/allowed_pickers?device_token=eq.${encodeURIComponent(savedToken)}`, {
+                        method: 'PATCH',
+                        headers: {
+                            'apikey': SUPABASE_KEY,
+                            'Authorization': `Bearer ${SUPABASE_KEY}`,
+                            'Content-Type': 'application/json',
+                            'Prefer': 'return=minimal'
+                        },
+                        body: JSON.stringify({ desktop_session_id: pcSessionId })
+                    });
+
+                    if (response.ok) {
+                        alert("Компьютер успешно авторизован! Он войдет в систему автоматически через секунду.");
+                        
+                        // Спустя небольшую паузу стираем за собой сессию из БД для безопасности
+                        setTimeout(() => {
+                            fetch(`${SUPABASE_URL}/rest/v1/allowed_pickers?device_token=eq.${encodeURIComponent(savedToken)}`, {
+                                method: 'PATCH',
+                                headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}`, 'Content-Type': 'application/json' },
+                                body: JSON.stringify({ desktop_session_id: null })
+                            });
+                        }, 5000);
+                    } else {
+                        throw new Error("Ошибка записи сессии в БД.");
+                    }
+                } catch (err) {
+                    alert("Не удалось передать авторизацию: " + err.message);
+                    playErrorBeep();
+                }
+            }
+            return;
+        }
         // Уровень 2: Активация/Регистрация устройства (С жестким запретом переавторизации)
         if (rawValue.toLowerCase().startsWith('login:')) {
             if (currentPicker) {
