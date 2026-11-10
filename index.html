@@ -68,8 +68,9 @@
     <div id="metaSyncBar" class="meta-sync-bar">Загрузка данных об актуальности базы...</div>
 
     <!-- СКРЫТЫЙ ИНДИКАТОР СТАТУСА АВТОРИЗАЦИИ -->
-    <div id="secureAuthBar" style="background: #e5e5ea; padding: 10px; border-radius: 8px; margin-bottom: 15px; text-align: center; font-size: 14px; font-weight: 600; color: #636366;">
+    <div id="secureAuthBar" style="background: #e5e5ea; padding: 10px; border-radius: 8px; margin-bottom: 15px; text-align: center; font-size: 14px; font-weight: 600; color: #636366; display: flex; flex-direction: column; gap: 8px; align-items: center; justify-content: center;">
         <span id="authStatusText">Режим: 👀 Только просмотр</span>
+        <button id="logoutBtn" onclick="executeManualLogout()" style="display: none; padding: 4px 12px; background-color: #ff3b30; color: white; border: none; border-radius: 6px; font-size: 12px; font-weight: bold; cursor: pointer;">Выйти из учетки</button>
     </div>
     
     <button class="scan-btn" id="toggleScanBtn" onclick="toggleScanner()">📷 Включить сканер</button>
@@ -121,7 +122,7 @@
         <div id="analogsList"></div>
     </div>
 
-   <div class="version-tag">сборка: 1.5.0 (WMS Chat + Roles)</div>
+   <div class="version-tag">сборка: 1.5.1 (Anti-Trash & DB Sync)</div>
 </div>
 
 <script>
@@ -199,7 +200,18 @@
             navigator.vibrate(duration);
         }
     }
-
+    function executeManualLogout() {
+        if (pickerStatus === "работаю") {
+            alert("Ошибка: Нельзя выйти из учетной записи, пока у вас ОТКРЫТА смена! Сначала пикните QR на двери для закрытия смены.");
+            playErrorBeep();
+            return;
+        }
+        if (confirm("Вы действительно хотите отвязать это устройство от текущего сотрудника?")) {
+            localStorage.removeItem('wms_secure_token');
+            setViewingMode();
+            alert("Устройство успешно переведено в режим просмотра.");
+        }
+    }
     // ИНИЦИАЛИЗАЦИЯ СТРАНИЦЫ: ЗАГРУЗКА МЕТАДАННЫХ И СТАТУСА СОТРУДНИКА
     window.addEventListener('DOMContentLoaded', async () => {
         await loadMetaSyncData();
@@ -263,24 +275,32 @@
         }
     }
 
-    function setViewingMode() {
+   function setViewingMode() {
         currentPicker = null;
         pickerStatus = "отдыхаю";
+        currentRole = "Кладовщик";
         const statusText = document.getElementById('authStatusText');
         const statusBar = document.getElementById('secureAuthBar');
+        const logoutBtn = document.getElementById('logoutBtn');
+        
         statusText.innerText = "Режим: 👀 Только просмотр";
         statusBar.style.backgroundColor = "#e5e5ea";
         statusText.style.color = "#636366";
+        if (logoutBtn) logoutBtn.style.display = "none";
     }
 
     function updateAuthUiVisuals() {
         const statusText = document.getElementById('authStatusText');
         const statusBar = document.getElementById('secureAuthBar');
         const managerBlock = document.getElementById('managerSettingsBlock');
+        const logoutBtn = document.getElementById('logoutBtn');
         
-        // Показываем настройки только Начальнику склада
         if (managerBlock) {
             managerBlock.style.display = (currentRole === "ЗавСклад") ? "block" : "none";
+        }
+
+        if (logoutBtn) {
+            logoutBtn.style.display = currentPicker ? "block" : "none";
         }
 
         if (pickerStatus === "работаю") {
@@ -381,12 +401,16 @@
             return;
         }
 
-        // Уровень 2: Активация/Регистрация устройства
+        // Уровень 2: Активация/Регистрация устройства (С жестким запретом переавторизации)
         if (rawValue.toLowerCase().startsWith('login:')) {
+            if (currentPicker) {
+                showError(`Запрещено: Устройство уже закреплено за сотрудником ${currentPicker}!`);
+                playErrorBeep();
+                return;
+            }
             await executeSecureLogin(rawValue);
             return;
         }
-
         // Уровень 3: Артикул товара
         if (rawValue.startsWith('#')) {
             document.getElementById('addressInput').value = rawValue;
@@ -420,6 +444,19 @@
 
         try {
             const todayStr = new Date().toISOString().split('T')[0];
+            const savedToken = localStorage.getItem('wms_secure_token');
+
+            // КРИТИЧЕСКОЕ ОБНОВЛЕНИЕ: Перед действием всегда берем актуальный статус из базы данных!
+            const statusResponse = await fetch(`${SUPABASE_URL}/rest/v1/allowed_pickers?device_token=eq.${encodeURIComponent(savedToken)}`, {
+                headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}` }
+            });
+            const statusData = await statusResponse.json();
+            
+            if (statusData && statusData.length > 0) {
+                // Синхронизируем локальный статус с базой данных на случай, если была переустановка
+                pickerStatus = statusData[0].status || "отдыхаю";
+                currentRole = statusData[0].role || "Кладовщик";
+            }
 
             if (pickerStatus === "отдыхаю") {
                 // ОТКРЫТИЕ СМЕНЫ
@@ -448,14 +485,13 @@
                 alert(`🎯 Смена успешно ОТКРЫТА. Приятной работы, ${currentPicker}!`);
 
             } else if (pickerStatus === "работаю") {
-                // Проверка, есть ли запись за СЕГОДНЯ
+                // ЗАКРЫТИЕ СМЕНЫ
                 const responseCheck = await fetch(`${SUPABASE_URL}/rest/v1/time_pickers?picker_name=eq.${encodeURIComponent(currentPicker)}&date_work=eq.${todayStr}`, {
                     headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}` }
                 });
                 const todayRecords = await responseCheck.json();
 
                 if (todayRecords && todayRecords.length > 0) {
-                    // КЕЙС Б1: Нормальное закрытие смены в конце дня
                     const activeShift = todayRecords.find(r => !r.time_end);
                     const shiftId = activeShift ? activeShift.id : todayRecords[todayRecords.length - 1].id;
 
@@ -521,7 +557,6 @@
             alert("Критическая ошибка модуля смен: " + err.message);
         }
     }
-
     async function updateEmployeeStatusInDb(newStatus) {
         const savedToken = localStorage.getItem('wms_secure_token');
         try {
