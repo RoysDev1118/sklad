@@ -81,7 +81,7 @@
             <button onclick="stopDesktopLinking()" style="padding: 2px 8px; background: #8e8e93; color: white; border: none; border-radius: 4px; font-size: 11px; cursor: pointer;">Отмена</button>
         </div>
 
-        <button id="logoutBtn" onclick="executeManualLogout()" style="display: none; padding: 4px 12px; background-color: #ff3b30; color: white; border: none; border-radius: 6px; font-size: 12px; font-weight: bold; cursor: pointer;">Выйти из учетки</button>
+        <button id="logoutBtn" onclick="" style="display: none; padding: 4px 12px; background-color: #ff3b30; color: white; border: none; border-radius: 6px; font-size: 12px; font-weight: bold; cursor: pointer;">Выйти из учетки</button>
     </div>    
     <button class="scan-btn" id="toggleScanBtn" onclick="toggleScanner()">📷 Включить сканер</button>
     <div id="videoContainer">
@@ -212,15 +212,23 @@
         }
     }
     function executeManualLogout() {
-        if (pickerStatus === "работаю") {
+        // Проверяем, компьютер это или телефон (по ширине экрана)
+        const isDesktop = window.innerWidth > 768;
+
+        if (pickerStatus === "работаю" && !isDesktop) {
             alert("Ошибка: Нельзя выйти из учетной записи, пока у вас ОТКРЫТА смена! Сначала пикните QR на двери для закрытия смены.");
             playErrorBeep();
             return;
         }
-        if (confirm("Вы действительно хотите отвязать это устройство от текущего сотрудника?")) {
+
+        const confirmMsg = isDesktop 
+            ? `Вы действительно хотите отвязать этот КОМПЬЮТЕР от вашей учетной записи? \n(Ваша рабочая смена на телефоне останется ОТКРЫТОЙ)`
+            : "Вы действительно хотите отвязать это устройство от текущего сотрудника?";
+
+        if (confirm(confirmMsg)) {
             localStorage.removeItem('wms_secure_token');
             setViewingMode();
-            alert("Устройство успешно переведено в режим просмотра.");
+            alert(isDesktop ? "Компьютер переведен в режим просмотра." : "Устройство успешно переведено в режим просмотра.");
         }
     }
     // ИНИЦИАЛИЗАЦИЯ СТРАНИЦЫ: ЗАГРУЗКА МЕТАДАННЫХ И СТАТУСА СОТРУДНИКА
