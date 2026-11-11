@@ -346,6 +346,9 @@
     }
         // ЛОГИКА ДЛЯ КОМПЬЮТЕРА: Генерация QR и ожидание токена от смартфона
     function startDesktopLinking() {
+        if ("Notification" in window && Notification.permission !== "granted" && Notification.permission !== "denied") {
+            Notification.requestPermission();
+        }
         const qrCanvasDiv = document.getElementById('pcQrCanvas');
         const qrContainer = document.getElementById('pcQrContainer');
         const linkPcBtn = document.getElementById('linkPcBtn');
@@ -1432,10 +1435,23 @@
             var maxIdInList = Math.max.apply(Math, messages.map(function(m) { return m.id; }));
             if (maxIdInList > lastSeenMessageId) {
                 playNotificationSound();
+
+                // Показываем всплывающее уведомление на экране ПК
+                const isDesktop = (window.innerWidth > 768);
+                if (isDesktop && "Notification" in window && Notification.permission === "granted") {
+                    // Берем текст самого свежего сообщения
+                    const freshMsg = messages.find(function(m) { return m.id === maxIdInList; });
+                    if (freshMsg) {
+                        new Notification("📦 Складской поиск+", {
+                            body: freshMsg.text,
+                            icon: "icon.png" // Путь к вашей иконке PWA
+                        });
+                    }
+                }
+
                 lastSeenMessageId = maxIdInList; 
             }
         }
-
         if (unreadCount > 0 && activeTab !== 'chat') {
             if (badge) {
                 badge.innerText = unreadCount;
