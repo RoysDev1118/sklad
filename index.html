@@ -69,8 +69,8 @@
     <div id="metaSyncBar" class="meta-sync-bar">Загрузка данных об актуальности базы...</div>
 
     <!-- СКРЫТЫЙ ИНДИКАТОР СТАТУСА АВТОРИЗАЦИИ -->
-    <div id="secureAuthBar" style="background: #e5e5ea; padding: 10px; border-radius: 8px; margin-bottom: 15px; text-align: center; font-size: 14px; font-weight: 600; color: #636366; display: flex; flex-direction: column; gap: 8px; align-items: center; justify-content: center;">
-        <span id="authStatusText">Режим: 👀 Только просмотр</span>
+    <div id="secureAuthBar" style="background: #e5e5ea; padding: 10px; border-radius: 8px; margin-bottom: 15px; text-align: center; font-size: 14px; font-weight: 600; color: #636366; display: flex; flex-direction: column; gap: 8px; align-items: center; justify-content: center;position: relative;">
+        <span id="authStatusText" style="padding-right: 25px;">Режим: 👀 Только просмотр</span>
         <!-- Кнопка для ПК (показывается только в режиме просмотра) -->
         <button id="linkPcBtn" onclick="startDesktopLinking()" style="display: none; padding: 6px 12px; background-color: #007aff; color: white; border: none; border-radius: 6px; font-size: 12px; font-weight: bold; cursor: pointer;">💻 Войти через телефон</button>
         
@@ -298,6 +298,26 @@
         }
     }
 
+   function clearSearchResults() {
+        const addressInput = document.getElementById('addressInput');
+        if (addressInput) addressInput.value = '';
+        
+        const addressHeader = document.getElementById('addressHeader');
+        if (addressHeader) addressHeader.style.display = 'none';
+        
+        const productsContainer = document.getElementById('productsContainer');
+        if (productsContainer) productsContainer.innerHTML = '';
+        
+        const analogsSection = document.getElementById('analogsSection');
+        if (analogsSection) analogsSection.style.display = 'none';
+        
+        const analogsList = document.getElementById('analogsList');
+        if (analogsList) analogsList.innerHTML = '';
+        
+        const errorBlock = document.getElementById('errorBlock');
+        if (errorBlock) errorBlock.style.display = 'none';
+   }
+
    function setViewingMode() {
         currentPicker = null;
         pickerStatus = "отдыхаю";
@@ -305,11 +325,14 @@
         const statusText = document.getElementById('authStatusText');
         const statusBar = document.getElementById('secureAuthBar');
         const logoutBtn = document.getElementById('logoutBtn');
+        const managerBlock = document.getElementById('managerSettingsBlock');
         
         statusText.innerText = "Режим: 👀 Только просмотр";
         statusBar.style.backgroundColor = "#e5e5ea";
         statusText.style.color = "#636366";
         if (logoutBtn) logoutBtn.style.display = "none";
+        if (managerBlock) managerBlock.style.display = "none";
+        
         const linkPcBtn = document.getElementById('linkPcBtn');
         if (linkPcBtn) {
             // При сбросе в режим просмотра показываем кнопку только на ПК
@@ -317,6 +340,7 @@
             linkPcBtn.style.display = isDesktop ? "block" : "none";
         }
         stopDesktopLinking();
+        clearSearchResults();
    }
 
     function updateAuthUiVisuals() {
@@ -662,6 +686,7 @@
                     await updateEmployeeStatusInDb("отдыхаю");
                     pickerStatus = "отдыхаю";
                     updateAuthUiVisuals();
+                    clearSearchResults();
                     triggerVibration(100);
                     alert(`🚪 Смена успешно ЗАКРЫТА. Хорошего отдыха, ${currentPicker}!`);
 
@@ -692,7 +717,7 @@
                     await updateEmployeeStatusInDb("отдыхаю");
                     pickerStatus = "отдыхаю";
                     updateAuthUiVisuals();
-                    
+                    clearSearchResults();                    
                     triggerVibration(400);
                     playErrorBeep();
                     
