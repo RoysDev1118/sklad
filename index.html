@@ -136,7 +136,7 @@
         <div id="analogsList"></div>
     </div>
 
-   <div class="version-tag">сборка: 1.6.0 (Anti-Trash, DB Sync & Desktop Link)</div>
+   <div class="version-tag">сборка: 1.6.1 (Anti-Trash, DB Sync & Desktop Link)</div>
 </div>
 
 <script>
@@ -1185,7 +1185,7 @@
         const isSkuSearch = document.getElementById('targetAddressTitle').innerText.includes('Арт:');
         analogsSection.querySelector('.analogs-title').innerText = isSkuSearch 
             ? "Адреса размещения товара на складе (Приоритет FEFO):" 
-            : "Also this item is stored in cells:";
+            : "Также этот товар лежит в ячейках:";
 
         arrayData.forEach(item => {
             const unitStr = item.unit ? item.unit : 'шт.';
