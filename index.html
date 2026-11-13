@@ -81,7 +81,8 @@
             <button onclick="stopDesktopLinking()" style="padding: 2px 8px; background: #8e8e93; color: white; border: none; border-radius: 4px; font-size: 11px; cursor: pointer;">Отмена</button>
         </div>
 
-        <button id="logoutBtn" onclick="executeManualLogout()" style="display: none; padding: 4px 12px; background-color: #ff3b30; color: white; border: none; border-radius: 6px; font-size: 12px; font-weight: bold; cursor: pointer;">Выйти из учетки</button>
+        <!-- Крошечная кнопка-иконка в самом углу плашки -->
+        <button id="logoutBtn" onclick="executeManualLogout()" title="Выйти из учетной записи" style="display: none; position: absolute; top: 8px; right: 8px; width: 22px; height: 22px; padding: 0; background-color: #ff3b30; color: white; border: none; border-radius: 4px; font-size: 12px; font-weight: bold; cursor: pointer; align-items: center; justify-content: center; z-index: 10;">🚪</button>
     </div>    
     <button class="scan-btn" id="toggleScanBtn" onclick="toggleScanner()">📷 Включить сканер</button>
     <div id="videoContainer">
@@ -115,13 +116,16 @@
         </div>
         
         <!-- Настройки для Начальника склада -->
-        <div id="managerSettingsBlock" style="display: none; background: #fff9f0; border: 1px solid #ff9500; padding: 10px; border-radius: 8px; margin-bottom: 10px; font-size: 13px;">
+        <div id="managerSettingsBlock" style="display: none; background: #fff9f0; border: 1px solid #ff9500; padding: 10px; border-radius: 8px; margin-bottom: 10px; font-size: 13px; flex-direction: column; gap: 8px;">
             <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
                 <input type="checkbox" id="managerNotifyToggle" onchange="toggleManagerNotifications()" checked>
-                <span>Получать уведомления о действиях кладовщиков</span>
+                <span style="font-weight: 600;">Получать уведомления о действиях кладовщиков</span>
+            </label>
+            <label id="managerRestNotifyLabel" style="display: flex; align-items: center; gap: 8px; cursor: pointer; padding-left: 20px; color: #636366;">
+                <input type="checkbox" id="managerRestNotifyToggle" onchange="toggleManagerRestNotifications()">
+                <span>Получать сообщения, даже когда отдыхаю</span>
             </label>
         </div>
-
         <div id="chatMessagesContainer" style="max-height: 350px; overflow-y: auto; display: flex; flex-direction: column; gap: 8px; padding-right: 2px;">
             <!-- Сюда будут динамически падать сообщения -->
             <div style="text-align: center; color: #8e8e93; font-style: italic; font-size: 13px; padding: 20px;">Нет сообщений за текущую смену</div>
@@ -327,13 +331,22 @@
             linkPcBtn.style.display = (!currentPicker && isDesktop) ? "block" : "none";
         }
         if (managerBlock) {
-            managerBlock.style.display = (currentRole === "ЗавСклад") ? "block" : "none";
+            if (currentRole === "ЗавСклад") {
+                managerBlock.style.display = "flex";
+                // Восстанавливаем сохраненные состояния галочек из localStorage
+                document.getElementById('managerNotifyToggle').checked = localStorage.getItem('wms_mgr_notify') !== 'false';
+                document.getElementById('managerRestNotifyToggle').checked = localStorage.getItem('wms_mgr_rest_notify') === 'true';
+                // Синхронизируем доступность второй галочки
+                toggleManagerNotifications();
+            } else {
+                managerBlock.style.display = "none";
+            }
         }
 
         if (logoutBtn) {
-            logoutBtn.style.display = currentPicker ? "block" : "none";
+            // Кнопка-иконка отображается как flex для правильного центрирования эмодзи двери
+            logoutBtn.style.display = currentPicker ? "flex" : "none";
         }
-
         if (pickerStatus === "работаю") {
             statusText.innerHTML = `👤 [${currentRole}] <strong>${currentPicker}</strong> (В РАБОТЕ)`;
             statusBar.style.backgroundColor = "#e6f4ea";
@@ -1368,7 +1381,11 @@
 
     // УПРАВЛЕНИЕ ФОНОВЫМ ОПРОСОМ ЧАТА
     function manageChatPolling() {
-        if (pickerStatus === "работаю") {
+        // Условие включения опроса: сотрудник работает ИЛИ (это ЗавСклад, он отдыхает, но хочет получать сообщения в отдыхе)
+        const wantsRestNotify = (currentRole === "ЗавСклад" && localStorage.getItem('wms_mgr_rest_notify') === 'true' && localStorage.getItem('wms_mgr_notify') !== 'false');
+        const shouldPoll = (pickerStatus === "работаю") || wantsRestNotify;
+
+        if (shouldPoll) {
             if (!chatIntervalId) {
                 fetchNewMessages();
                 chatIntervalId = setInterval(fetchNewMessages, 5000);
@@ -1385,7 +1402,8 @@
 
     // ПОЛУЧЕНИЕ СООБЩЕНИЙ ИЗ SUPABASE С УЧЕТОМ РОЛИ
     async function fetchNewMessages() {
-        if (!currentPicker || pickerStatus !== "работаю") return;
+        const wantsRestNotify = (currentRole === "ЗавСклад" && localStorage.getItem('wms_mgr_rest_notify') === 'true' && localStorage.getItem('wms_mgr_notify') !== 'false');
+        if (!currentPicker || (pickerStatus !== "работаю" && !wantsRestNotify)) return;
 
         try {
             var timeLimit = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
@@ -1507,7 +1525,37 @@
 
     // Вспомогательная функция для переключателя ЗавСклада
     function toggleManagerNotifications() {
+        const mainToggle = document.getElementById('managerNotifyToggle');
+        const restToggle = document.getElementById('managerRestNotifyToggle');
+        const restLabel = document.getElementById('managerRestNotifyLabel');
+
+        // Сохраняем состояние основной галочки
+        localStorage.setItem('wms_mgr_notify', mainToggle.checked);
+
+        if (mainToggle.checked) {
+            restToggle.disabled = false;
+            restLabel.style.opacity = "1";
+            restLabel.style.cursor = "pointer";
+        } else {
+            restToggle.disabled = true;
+            restToggle.checked = false;
+            localStorage.setItem('wms_mgr_rest_notify', 'false');
+            restLabel.style.opacity = "0.5";
+            restLabel.style.cursor = "not-allowed";
+        }
+
+        // Перезапускаем опрос чата и обновляем ленту
+        manageChatPolling();
         fetchNewMessages();
+    }
+
+    function toggleManagerRestNotifications() {
+        const restToggle = document.getElementById('managerRestNotifyToggle');
+        // Сохраняем состояние галочки отдыха
+        localStorage.setItem('wms_mgr_rest_notify', restToggle.checked);
+        
+        // Перезапускаем опрос чата, чтобы включить/выключить таймер в фоне
+        manageChatPolling();
     }
 // === ЛОГИКА УСТАНОВКИ PWA ПРИЛОЖЕНИЯ ===
 let deferredPrompt;
