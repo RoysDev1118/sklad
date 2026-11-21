@@ -63,7 +63,7 @@
         .analog-meta { font-size: 12px; color: #636366; padding-top: 4px; margin-top: 4px; }
         
         .error { color: #ff3b30; background: #ffe5e5; padding: 12px; border-radius: 8px; margin-top: 15px; display: none; text-align: center; font-size: 14px; }
-        .version-tag { text-align: center; font-size: 11px; color: #c7c7cc; margin-top: 25px; font-weight: 500; letter-spacing: 0.5px; text-transform: lowercase; }
+        .version-tag { text-align: center; font-size: 12px; color: #636366; margin-top: 25px; font-weight: 600; letter-spacing: 0.5px; text-transform: lowercase; }
     </style>
 </head>
 <body>
@@ -93,16 +93,31 @@
         <!-- Крошечная кнопка-иконка в самом углу плашки -->
         <button id="logoutBtn" onclick="executeManualLogout()" title="Выйти из учетной записи" style="display: none; position: absolute; top: 8px; right: 8px; width: 22px; height: 22px; padding: 0; background-color: #ff3b30; color: white; border: none; border-radius: 4px; font-size: 12px; font-weight: bold; cursor: pointer; align-items: center; justify-content: center; z-index: 10;">🚪</button>
     </div>    
-    <!-- ВКЛАДКИ НАВИГАЦИИ -->
-    <div style="display: flex; gap: 6px; margin-bottom: 15px; width: 100%;">
-        <button id="tabSearchBtn" onclick="switchTab('search')" style="flex: 1; padding: 10px 6px; background: #007aff; color: white; border: none; border-radius: 8px; font-weight: bold; cursor: pointer; font-size: 13px;">📦 Поиск</button>
-        <button id="tabChatBtn" onclick="switchTab('chat')" style="flex: 1; padding: 10px 6px; background: #e5e5ea; color: #1c1c1e; border: none; border-radius: 8px; font-weight: bold; cursor: pointer; position: relative; font-size: 13px;">
-            💬 Чат
-            <span id="chatBadge" style="display: none; position: absolute; top: -5px; right: -5px; background: #ff3b30; color: white; border-radius: 50%; padding: 3px 7px; font-size: 11px; font-weight: bold; min-width: 18px; text-align: center;">0</span>
-        </button>
-        <button id="tabSettingsBtn" onclick="switchTab('settings')" style="flex: 1; padding: 10px 6px; background: #e5e5ea; color: #1c1c1e; border: none; border-radius: 8px; font-weight: bold; cursor: pointer; font-size: 13px;">⚙️ Настройки</button>
+    <!-- ЭКРАН БЛОКИРОВКИ ДЛЯ НЕАВТОРИЗОВАННЫХ ПОЛЬЗОВАТЕЛЕЙ -->
+    <div id="lockedAccessScreen" style="display: none; flex-direction: column; align-items: center; text-align: center; padding: 20px 10px; background: #f8f9fa; border: 1px solid #e5e5ea; border-radius: 10px; margin-bottom: 15px;">
+        <div style="font-size: 36px; margin-bottom: 8px;">🔒</div>
+        <div style="font-size: 16px; font-weight: bold; color: #1c1c1e; margin-bottom: 6px;">Доступ к базе склада закрыт</div>
+        <div style="font-size: 13px; color: #636366; line-height: 1.4; margin-bottom: 16px;">
+            Для работы отсканируйте персональный QR-код сотрудника или откройте приложение по пригласительной ссылке.
+        </div>
+        <button class="scan-btn" id="guestScanBtn" onclick="toggleGuestScanner()" style="margin-bottom: 10px;">📷 Активировать по QR-коду</button>
+        <div id="guestVideoContainer" style="width: 100%; border-radius: 8px; overflow: hidden; margin-bottom: 10px; display: none; background: #000; position: relative; height: 240px;">
+            <video id="guestWebcamVideo" autoplay playsinline muted style="width: 100%; height: 100%; object-fit: cover;"></video>
+        </div>
+        <div id="guestErrorBlock" class="error" style="width: 100%; margin-top: 5px;"></div>
     </div>
 
+    <!-- РАБОЧАЯ ЗОНА (СКРЫТА ДО АВТОРИЗАЦИИ ИЛИ ДЕМО-ДОСТУПА) -->
+    <div id="authorizedWorkspace" style="display: none; width: 100%;">
+        <!-- ВКЛАДКИ НАВИГАЦИИ -->
+        <div id="mainNavTabs" style="display: flex; gap: 6px; margin-bottom: 15px; width: 100%;">
+            <button id="tabSearchBtn" onclick="switchTab('search')" style="flex: 1; padding: 10px 6px; background: #007aff; color: white; border: none; border-radius: 8px; font-weight: bold; cursor: pointer; font-size: 13px;">📦 Поиск</button>
+            <button id="tabChatBtn" onclick="switchTab('chat')" style="flex: 1; padding: 10px 6px; background: #e5e5ea; color: #1c1c1e; border: none; border-radius: 8px; font-weight: bold; cursor: pointer; position: relative; font-size: 13px;">
+                💬 Чат
+                <span id="chatBadge" style="display: none; position: absolute; top: -5px; right: -5px; background: #ff3b30; color: white; border-radius: 50%; padding: 3px 7px; font-size: 11px; font-weight: bold; min-width: 18px; text-align: center;">0</span>
+            </button>
+            <button id="tabSettingsBtn" onclick="switchTab('settings')" style="flex: 1; padding: 10px 6px; background: #e5e5ea; color: #1c1c1e; border: none; border-radius: 8px; font-weight: bold; cursor: pointer; font-size: 13px;">⚙️ Настройки</button>
+        </div>
     <!-- ЭКРАН ПОИСКА -->
     <div id="searchSection">
         <button class="scan-btn" id="toggleScanBtn" onclick="toggleScanner()">📷 Включить сканер</button>
@@ -178,7 +193,9 @@
 
     </div>
 
-    <div class="version-tag">сборка: 1.6.4 (Picker Own Claims History & Shift-Day Chat)</div>
+    </div> <!-- Конец #authorizedWorkspace -->
+
+    <div class="version-tag">сборка: 1.6.5 (Restricted Access, Invite Demo Mode & Auto-Cache SW)</div>
 </div>
 
 <script>
