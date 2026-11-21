@@ -1536,7 +1536,7 @@
                 throw new Error(`Строка товара не найдена в базе.`);
             }
 
-            const actualRow = currentRows;
+            const actualRow = currentRows[0];
             const actualQty = actualRow.quantity !== null ? parseInt(actualRow.quantity, 10) : 0;
 
             if (actualRow.status === 'locked' || actualQty <= 0) {
