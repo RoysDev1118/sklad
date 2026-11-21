@@ -40,7 +40,16 @@
 
         .result-card { margin-top: 12px; padding: 15px; border-radius: 8px; background-color: #f8f9fa; border-left: 5px solid #007aff; }
         .result-card.multi-item { border-left-color: #ff9500; }
+        .quality-mode-indicator { display: none; margin-top: 10px; padding: 6px 10px; background: #fff3cd; border: 1px solid #ffc107; color: #856404; border-radius: 6px; font-size: 12px; font-weight: 600; text-align: center; }
+        .result-card.quarantine-card { border-left-color: #eab308; background-color: #fefce8; border: 1px solid #fde047; border-left-width: 5px; }
+        .result-card.defect-card { border-left-color: #ef4444; background-color: #fef2f2; border: 1px solid #fca5a5; border-left-width: 5px; }
+        .quality-badge { display: inline-block; padding: 3px 8px; border-radius: 4px; font-size: 12px; font-weight: bold; margin-bottom: 8px; text-transform: uppercase; letter-spacing: 0.5px; }
+        .quality-badge.quarantine { background-color: #fef08a; color: #854d0e; border: 1px solid #eab308; }
+        .quality-badge.defect { background-color: #fee2e2; color: #991b1b; border: 1px solid #ef4444; }
+        .warning-hint { color: #854d0e; background: #fef9c3; border: 1px solid #fde047; padding: 12px; border-radius: 8px; margin-top: 15px; display: none; text-align: center; font-size: 13px; font-weight: 500; }
+        .settings-card { background: #f8f9fa; border: 1px solid #e5e5ea; border-radius: 8px; padding: 14px; margin-bottom: 12px; }
         
+
         .result-item { margin-bottom: 10px; font-size: 15px; color: #2c3e50; }
         .result-item strong { color: #7f8c8d; font-size: 11px; display: block; text-transform: uppercase; letter-spacing: 0.5px; }
         
@@ -84,59 +93,79 @@
         <!-- Крошечная кнопка-иконка в самом углу плашки -->
         <button id="logoutBtn" onclick="executeManualLogout()" title="Выйти из учетной записи" style="display: none; position: absolute; top: 8px; right: 8px; width: 22px; height: 22px; padding: 0; background-color: #ff3b30; color: white; border: none; border-radius: 4px; font-size: 12px; font-weight: bold; cursor: pointer; align-items: center; justify-content: center; z-index: 10;">🚪</button>
     </div>    
-    <button class="scan-btn" id="toggleScanBtn" onclick="toggleScanner()">📷 Включить сканер</button>
-    <div id="videoContainer">
-        <video id="webcamVideo" autoplay playsinline muted></video>
-    </div>
-
-    <div class="divider">или введите вручную</div>
-
-    <input type="text" id="addressInput" placeholder="1012 или 1-01-2" autocomplete="off">
-    <button class="search-btn" onclick="triggerManualSearch()">Найти данные</button>
-
-    <div id="errorBlock" class="error"></div>
-
-    <div id="addressHeader" class="address-header">Ячейка: <span id="targetAddressTitle">-</span></div>
-    
-    <div id="productsContainer"></div>
-   <!-- ВКЛАДКИ НАВИГАЦИИ -->
-    <div style="display: flex; gap: 10px; margin-top: 15px; width: 100%;">
-        <button id="tabSearchBtn" onclick="switchTab('search')" style="flex: 1; padding: 12px; background: #007aff; color: white; border: none; border-radius: 8px; font-weight: bold; cursor: pointer;">📦 Поиск</button>
-        <button id="tabChatBtn" onclick="switchTab('chat')" style="flex: 1; padding: 12px; background: #e5e5ea; color: #1c1c1e; border: none; border-radius: 8px; font-weight: bold; cursor: pointer; position: relative;">
-            💬 Чат смен
+    <!-- ВКЛАДКИ НАВИГАЦИИ -->
+    <div style="display: flex; gap: 6px; margin-bottom: 15px; width: 100%;">
+        <button id="tabSearchBtn" onclick="switchTab('search')" style="flex: 1; padding: 10px 6px; background: #007aff; color: white; border: none; border-radius: 8px; font-weight: bold; cursor: pointer; font-size: 13px;">📦 Поиск</button>
+        <button id="tabChatBtn" onclick="switchTab('chat')" style="flex: 1; padding: 10px 6px; background: #e5e5ea; color: #1c1c1e; border: none; border-radius: 8px; font-weight: bold; cursor: pointer; position: relative; font-size: 13px;">
+            💬 Чат
             <span id="chatBadge" style="display: none; position: absolute; top: -5px; right: -5px; background: #ff3b30; color: white; border-radius: 50%; padding: 3px 7px; font-size: 11px; font-weight: bold; min-width: 18px; text-align: center;">0</span>
         </button>
+        <button id="tabSettingsBtn" onclick="switchTab('settings')" style="flex: 1; padding: 10px 6px; background: #e5e5ea; color: #1c1c1e; border: none; border-radius: 8px; font-weight: bold; cursor: pointer; font-size: 13px;">⚙️ Настройки</button>
     </div>
 
-    <!-- КОНТЕЙНЕР ДЛЯ ЭКРАНА ЧАТА -->
-    <div id="chatSection" style="display: none; margin-top: 15px; width: 100%;">
+    <!-- ЭКРАН ПОИСКА -->
+    <div id="searchSection">
+        <button class="scan-btn" id="toggleScanBtn" onclick="toggleScanner()">📷 Включить сканер</button>
+        <div id="videoContainer">
+            <video id="webcamVideo" autoplay playsinline muted></video>
+        </div>
+
+        <div class="divider">или введите вручную</div>
+
+        <input type="text" id="addressInput" placeholder="1012 или 1-01-2" autocomplete="off">
+        <button class="search-btn" onclick="triggerManualSearch()">Найти данные</button>
+
+        <div id="qualityModeIndicator" class="quality-mode-indicator">⚠️ Режим: с Браком и Карантином</div>
+        <div id="errorBlock" class="error"></div>
+        <div id="warningHintBlock" class="warning-hint"></div>
+        <div id="addressHeader" class="address-header">Ячейка: <span id="targetAddressTitle">-</span></div>
+        <div id="productsContainer"></div>
+        <div id="analogsSection" class="analogs-section">
+            <div class="analogs-title">Также этот товар лежит в ячейках:</div>
+            <div id="analogsList"></div>
+        </div>
+    </div>
+
+    <!-- ЭКРАН ЧАТА -->
+    <div id="chatSection" style="display: none; width: 100%;">
         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
             <div style="font-size: 14px; font-weight: bold; color: #3a3a3c; text-transform: uppercase;">Системные сообщения:</div>
-            <button onclick="()" style="padding: 6px 10px; background: #e5e5ea; border: none; border-radius: 6px; font-size: 12px; cursor: pointer; font-weight: 500;">Прочитать все</button>
-        </div>
-        
-        <!-- Настройки для Начальника склада -->
-        <div id="managerSettingsBlock" style="display: none; background: #fff9f0; border: 1px solid #ff9500; padding: 10px; border-radius: 8px; margin-bottom: 10px; font-size: 13px; flex-direction: column; gap: 8px;">
-            <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
-                <input type="checkbox" id="managerNotifyToggle" onchange="toggleManagerNotifications()" checked>
-                <span style="font-weight: 600;">Получать уведомления о действиях кладовщиков</span>
-            </label>
-            <label id="managerRestNotifyLabel" style="display: flex; align-items: center; gap: 8px; cursor: pointer; padding-left: 20px; color: #636366;">
-                <input type="checkbox" id="managerRestNotifyToggle" onchange="toggleManagerRestNotifications()">
-                <span>Получать сообщения, даже когда отдыхаю</span>
-            </label>
+            <button onclick="markAllMessagesAsRead()" style="padding: 6px 10px; background: #e5e5ea; border: none; border-radius: 6px; font-size: 12px; cursor: pointer; font-weight: 500;">Прочитать все</button>
         </div>
         <div id="chatMessagesContainer" style="max-height: 350px; overflow-y: auto; display: flex; flex-direction: column; gap: 8px; padding-right: 2px;">
-            <!-- Сюда будут динамически падать сообщения -->
             <div style="text-align: center; color: #8e8e93; font-style: italic; font-size: 13px; padding: 20px;">Нет сообщений за текущую смену</div>
         </div>
     </div>
-    <div id="analogsSection" class="analogs-section">
-        <div class="analogs-title">Также этот товар лежит в ячейках:</div>
-        <div id="analogsList"></div>
+
+    <!-- ЭКРАН НАСТРОЕК -->
+    <div id="settingsSection" style="display: none; width: 100%;">
+        <div style="font-size: 14px; font-weight: bold; color: #3a3a3c; text-transform: uppercase; margin-bottom: 12px;">Параметры отображения и работы:</div>
+        <div class="settings-card">
+            <label style="display: flex; align-items: flex-start; gap: 10px; cursor: pointer; font-size: 15px; color: #1c1c1e; font-weight: 600;">
+                <input type="checkbox" id="showDefectQuarantineToggle" onchange="onQualityFilterChanged()" autocomplete="off" style="width: 20px; height: 20px; margin-top: 2px; cursor: pointer;">
+                <div>
+                    <div>Показывать Брак и Карантин</div>
+                    <div style="font-size: 12px; color: #636366; font-weight: normal; margin-top: 4px; line-height: 1.4;">
+                        По умолчанию выключено (при запуске и перезагрузке всегда сбрасывается).<br>
+                        Если включено — позиции отображаются в самом конце списков (сначала Карантин, затем Брак).
+                    </div>
+                </div>
+            </label>
+        </div>
+        <div id="managerSettingsBlock" class="settings-card" style="display: none; background: #fff9f0; border: 1px solid #ff9500; font-size: 14px; flex-direction: column; gap: 10px;">
+            <div style="font-size: 12px; font-weight: bold; color: #d97706; text-transform: uppercase;">Уведомления руководителя:</div>
+            <label style="display: flex; align-items: center; gap: 10px; cursor: pointer;">
+                <input type="checkbox" id="managerNotifyToggle" onchange="toggleManagerNotifications()" checked style="width: 18px; height: 18px;">
+                <span style="font-weight: 600;">Получать уведомления о действиях кладовщиков</span>
+            </label>
+            <label id="managerRestNotifyLabel" style="display: flex; align-items: center; gap: 10px; cursor: pointer; padding-left: 26px; color: #636366;">
+                <input type="checkbox" id="managerRestNotifyToggle" onchange="toggleManagerRestNotifications()" style="width: 18px; height: 18px;">
+                <span>Получать сообщения, даже когда отдыхаю</span>
+            </label>
+        </div>
     </div>
 
-   <div class="version-tag">сборка: 1.6.1 (Anti-Trash, DB Sync & Desktop Link)</div>
+    <div class="version-tag">сборка: 1.6.2 (Quarantine/Defect Filter, Anti-DoubleClick & Settings Tab)</div>
 </div>
 
 <script>
@@ -151,6 +180,54 @@
     let chatIntervalId = null;
     let pcLinkIntervalId = null;
     let lastSeenMessageId = parseInt(localStorage.getItem('wms_last_msg_id') || '0', 10);
+    let isClaimProcessing = false;
+
+    function isQualityFilterEnabled() {
+        const toggle = document.getElementById('showDefectQuarantineToggle');
+        return toggle ? toggle.checked : false;
+    }
+
+    function normalizeQualityStatus(rawStatus) {
+        if (!rawStatus) return "";
+        const s = String(rawStatus).trim().toLowerCase();
+        if (s === "карантин") return "Карантин";
+        if (s === "брак") return "Брак";
+        return "";
+    }
+
+    function getQualityPriority(item) {
+        const q = normalizeQualityStatus(item.quality_status);
+        if (q === "Карантин") return 1;
+        if (q === "Брак") return 2;
+        return 0;
+    }
+
+    function sortProductsWithQuality(items) {
+        return [...items].sort((a, b) => {
+            const qA = getQualityPriority(a);
+            const qB = getQualityPriority(b);
+            if (qA !== qB) return qA - qB;
+
+            const dateA = a.production_date ? new Date(a.production_date).getTime() : Infinity;
+            const dateB = b.production_date ? new Date(b.production_date).getTime() : Infinity;
+            if (dateA !== dateB) return dateA - dateB;
+
+            return (a.quantity !== null ? a.quantity : 0) - (b.quantity !== null ? b.quantity : 0);
+        });
+    }
+
+    function onQualityFilterChanged() {
+        const enabled = isQualityFilterEnabled();
+        const indicator = document.getElementById('qualityModeIndicator');
+        if (indicator) {
+            indicator.style.display = enabled ? 'block' : 'none';
+        }
+        const currentInput = document.getElementById('addressInput').value.trim();
+        if (currentInput) {
+            searchAddress();
+        }
+    }
+
     // ЗВУКОВОЙ СИГНАЛ ОШИБКИ (Web Audio API)
     function playErrorBeep() {
         try {
@@ -237,6 +314,11 @@
     }
     // ИНИЦИАЛИЗАЦИЯ СТРАНИЦЫ: ЗАГРУЗКА МЕТАДАННЫХ И СТАТУСА СОТРУДНИКА
     window.addEventListener('DOMContentLoaded', async () => {
+        const qualityToggle = document.getElementById('showDefectQuarantineToggle');
+        if (qualityToggle) qualityToggle.checked = false;
+        const indicator = document.getElementById('qualityModeIndicator');
+        if (indicator) indicator.style.display = 'none';
+
         await loadMetaSyncData();
         await checkDeviceAuthorization();
     });
@@ -316,6 +398,9 @@
         
         const errorBlock = document.getElementById('errorBlock');
         if (errorBlock) errorBlock.style.display = 'none';
+
+        const warningHintBlock = document.getElementById('warningHintBlock');
+        if (warningHintBlock) warningHintBlock.style.display = 'none';
    }
 
    function setViewingMode() {
@@ -818,6 +903,7 @@
         document.getElementById('analogsSection').style.display = 'none';
         document.getElementById('analogsList').innerHTML = '';
         document.getElementById('errorBlock').style.display = 'none';
+        document.getElementById('warningHintBlock').style.display = 'none';
 
         if (!inputValue) {
             showError("Пожалуйста, введите или отсканируйте данные");
@@ -859,6 +945,7 @@
         const addressHeader = document.getElementById('addressHeader');
         const productsContainer = document.getElementById('productsContainer');
         const analogsSection = document.getElementById('analogsSection');
+        const showBad = isQualityFilterEnabled();
 
         try {
             const response = await fetch(`${SUPABASE_URL}/rest/v1/test_products?address=eq.${encodeURIComponent(addressValue)}`, {
@@ -867,10 +954,19 @@
             if (!response.ok) throw new Error(`Ошибка сервера: ${response.status}`);
             let targetData = await response.json();
 
-            let validItems = targetData.filter(item => item.title && item.title.trim() !== "");
-            if (validItems.length === 0) {
+            let allValidItems = targetData.filter(item => item.title && item.title.trim() !== "");
+            if (allValidItems.length === 0) {
                 showError(`Ячейка или зона "${addressValue}" пуста или не существует.`);
                 playErrorBeep();
+                return;
+            }
+
+            let validItems = showBad 
+                ? allValidItems 
+                : allValidItems.filter(item => normalizeQualityStatus(item.quality_status) === "");
+
+            if (validItems.length === 0 && !showBad) {
+                showWarningHint(`В ячейке/зоне "${addressValue}" нет доступного товара (найдены позиции в статусе Карантин или Брак — включите фильтр во вкладке «⚙️ Настройки», чтобы увидеть).`);
                 return;
             }
 
@@ -890,12 +986,16 @@
                 validItems.sort((a, b) => a.id - b.id);
 
                 if (isExplicitlyExpanded) {
-                    validItems.forEach(targetItem => {
+                    const sortedExpanded = sortProductsWithQuality(validItems);
+                    sortedExpanded.forEach(targetItem => {
                         renderItemCard(productsContainer, targetItem, true);
                     });
                 } else {
                     let i = 0;
                     let groupCounter = 1;
+                    let normalCards = [];
+                    let quarantineCards = [];
+                    let defectCards = [];
 
                     while (i < validItems.length) {
                         let currentItem = validItems[i];
@@ -910,42 +1010,59 @@
                             }
 
                             const stringifiedIds = JSON.stringify(mixBlockItems.map(item => item.id));
+                            const hasDefect = mixBlockItems.some(b => normalizeQualityStatus(b.quality_status) === 'Брак');
+                            const hasQuarantine = mixBlockItems.some(b => normalizeQualityStatus(b.quality_status) === 'Карантин');
+                            
+                            let qTag = '';
+                            if (hasDefect) qTag += ' <span class="quality-badge defect" style="margin-bottom:0;">🛑 БРАК</span>';
+                            if (hasQuarantine) qTag += ' <span class="quality-badge quarantine" style="margin-bottom:0;">⚠️ КАРАНТИН</span>';
 
-                            productsContainer.innerHTML += `
+                            const htmlBlock = `
                                 <div class="result-card multi-item" style="border-left-color: #ff9500; background-color: #fff9f0;">
                                     <div class="result-item" style="font-size: 16px; color: #ff9500;"><strong>📍 Зона:</strong> <span style="font-weight: bold;">${currentItem.address}</span></div>
-                                    <div class="result-item" style="font-weight: bold; color: #d97706; margin-top: 5px;">⚠️ СБОРНЫЙ ПАЛЕТ №${groupCounter} (${mixBlockItems.length} поз.)</div>
+                                    <div class="result-item" style="font-weight: bold; color: #d97706; margin-top: 5px;">⚠️ СБОРНЫЙ ПАЛЕТ №${groupCounter} (${mixBlockItems.length} поз.) ${qTag}</div>
                                     <div class="result-item" style="font-size: 12px; color: #7f8c8d;">Содержит артикулы: ${mixBlockItems.map(b => b.sku || 'без арт.').join(', ')}</div>
                                     <button onclick='quickViewCell("${currentItem.address}", ${stringifiedIds})' style="margin-top:8px; width:100%; padding:8px; background:#ff9500; color:white; border:none; border-radius:6px; font-weight:bold; cursor:pointer; font-size:13px;">🔎 Раскрыть только этот палет</button>
                                 </div>`;
+                            
+                            if (hasDefect) defectCards.push(htmlBlock);
+                            else if (hasQuarantine) quarantineCards.push(htmlBlock);
+                            else normalCards.push(htmlBlock);
+                            
                             groupCounter++;
                         } else {
-                            renderItemCard(productsContainer, currentItem, false);
+                            const tempDiv = document.createElement('div');
+                            renderItemCard(tempDiv, currentItem, false);
+                            const q = normalizeQualityStatus(currentItem.quality_status);
+                            if (q === 'Брак') defectCards.push(tempDiv.innerHTML);
+                            else if (q === 'Карантин') quarantineCards.push(tempDiv.innerHTML);
+                            else normalCards.push(tempDiv.innerHTML);
                             i++;
                         }
                     }
+                    productsContainer.innerHTML = normalCards.join('') + quarantineCards.join('') + defectCards.join('');
                 }
                 analogsSection.style.display = 'none';
             } else {
-                validItems.forEach(targetItem => {
+                const sortedCellItems = sortProductsWithQuality(validItems);
+                sortedCellItems.forEach(targetItem => {
                     renderItemCard(productsContainer, targetItem, false);
                 });
 
-                const singleProductTitle = validItems[0].title;
+                const singleProductTitle = sortedCellItems[0].title;
                 const responseAnalogs = await fetch(`${SUPABASE_URL}/rest/v1/test_products?title=eq.${encodeURIComponent(singleProductTitle)}&address=neq.${encodeURIComponent(addressValue)}`, {
                     headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}` }
                 });
-                const analogsData = await responseAnalogs.json();
+                let analogsData = await responseAnalogs.json();
+
+                if (!showBad) {
+                    analogsData = analogsData.filter(item => normalizeQualityStatus(item.quality_status) === "");
+                }
 
                 if (analogsData.length > 0) {
-                    analogsData.sort((a, b) => {
-                        const dateA = a.production_date ? new Date(a.production_date).getTime() : Infinity;
-                        const dateB = b.production_date ? new Date(b.production_date).getTime() : Infinity;
-                        if (dateA !== dateB) return dateA - dateB;
-                        return (a.quantity !== null ? a.quantity : 0) - (b.quantity !== null ? b.quantity : 0);
-                    });
-                    const cellAddresses = [...new Set(analogsData.map(item => item.address))];
-                    renderAnalogsListWithMixCheck(analogsData, cellAddresses);
+                    const sortedAnalogs = sortProductsWithQuality(analogsData);
+                    const cellAddresses = [...new Set(sortedAnalogs.map(item => item.address))];
+                    renderAnalogsListWithMixCheck(sortedAnalogs, cellAddresses);
                 } else {
                     analogsSection.style.display = 'none';
                 }
@@ -961,7 +1078,18 @@
         const displayUnit = targetItem.unit ? targetItem.unit : 'шт.';
         const itemPurpose = (targetItem.purpose || '').trim();
         const isMixColor = forceOrange || (itemPurpose === 'СБХран' || itemPurpose === 'СБХран+');
-        const cardClass = isMixColor ? 'result-card multi-item' : 'result-card';
+        
+        const qStatus = normalizeQualityStatus(targetItem.quality_status);
+        let cardClass = isMixColor ? 'result-card multi-item' : 'result-card';
+        let qualityBadgeHtml = '';
+
+        if (qStatus === 'Брак') {
+            cardClass = 'result-card defect-card';
+            qualityBadgeHtml = `<div><span class="quality-badge defect">🛑 СТАТУС: БРАК</span></div>`;
+        } else if (qStatus === 'Карантин') {
+            cardClass = 'result-card quarantine-card';
+            qualityBadgeHtml = `<div><span class="quality-badge quarantine">⚠️ СТАТУС: КАРАНТИН</span></div>`;
+        }
         
         let actionBlockHtml = '';
         const itemQty = targetItem.quantity !== null ? targetItem.quantity : 0;
@@ -976,10 +1104,9 @@
             const valAttr = itemQty > 0 ? `value="${itemQty}"` : 'value="1"';
 
             if (currentPicker) {
-                // ПРОВЕРКА СТАТУСА: БЛОКИРОВКА КНОПКИ ЕСЛИ СОТРУДНИК ОТДЫХАЕТ
                 const isResting = pickerStatus === "отдыхаю";
                 const btnDisabledAttr = isResting ? "disabled" : "";
-                const btnBgColor = isResting ? "#aeaeae" : "#5856d6";
+                const btnBgColor = isResting ? "#aeaeae" : (qStatus === 'Брак' ? "#dc2626" : (qStatus === 'Карантин' ? "#d97706" : "#5856d6"));
                 const btnCursor = isResting ? "not-allowed" : "pointer";
                 const subText = isResting ? '<div style="color:#ff3b30; font-size:11px; font-weight:bold; margin-top:4px;">Заблокировано: ты не на смене (Отдыхаешь)</div>' : '';
 
@@ -990,7 +1117,7 @@
                             <input type="number" id="claimQty_${targetItem.id}" ${valAttr} min="1" ${maxAttr} 
                                    style="width: 80px; margin-bottom: 0; padding: 8px; font-size: 15px; letter-spacing: 0; text-align: center;" ${isResting ? 'disabled' : ''}>
                             <span style="font-size: 14px; color: #505050; font-weight: 500;">${displayUnit}</span>
-                            <button onclick="executeClaimAction(${targetItem.id}, '${escapeHtml(targetItem.sku || '')}', '${escapeHtml(targetItem.title)}', '${escapeHtml(targetItem.address)}', '${escapeHtml(targetItem.purpose || '')}', '${displayUnit}', '${escapeHtml(targetItem.batch || '')}', '${targetItem.production_date || ''}')"  
+                            <button onclick="executeClaimAction(this, ${targetItem.id}, '${escapeHtml(targetItem.sku || '')}', '${escapeHtml(targetItem.title)}', '${escapeHtml(targetItem.address)}', '${escapeHtml(targetItem.purpose || '')}', '${displayUnit}', '${escapeHtml(targetItem.batch || '')}', '${targetItem.production_date || ''}', '${escapeHtml(qStatus)}')"  
                                     style="flex: 1; padding: 10px; background-color: ${btnBgColor}; color: white; border: none; border-radius: 6px; font-weight: bold; cursor: ${btnCursor}; font-size: 14px;" ${btnDisabledAttr}>
                                 Взять в работу
                             </button>
@@ -1007,6 +1134,7 @@
 
         container.innerHTML += `
             <div class="${cardClass}">
+                ${qualityBadgeHtml}
                 <div class="result-item"><strong>Артикул:</strong> ${skuHtml}</div>
                 <div class="result-item"><strong>Наименование продукции:</strong> <span style="font-weight: 500;">${targetItem.title}</span></div>
                 <div class="result-item"><strong>Назначение:</strong> <span>${targetItem.purpose || '—'}</span></div>
@@ -1030,6 +1158,7 @@
     async function executeHybridSearch(dbSearchMask, originalInput) {
         const addressHeader = document.getElementById('addressHeader');
         const productsContainer = document.getElementById('productsContainer');
+        const showBad = isQualityFilterEnabled();
 
         try {
             const response = await fetch(`${SUPABASE_URL}/rest/v1/test_products?address=like.${encodeURIComponent(dbSearchMask)}`, {
@@ -1038,10 +1167,19 @@
             if (!response.ok) throw new Error(`Ошибка сервера: ${response.status}`);
             let data = await response.json(); 
 
-            const validItems = data.filter(item => item.title && item.title.trim() !== "");
-            if (validItems.length === 0) {
+            const allValidItems = data.filter(item => item.title && item.title.trim() !== "");
+            if (allValidItems.length === 0) {
                 showError(`В зоне/на стеллаже по запросу "${originalInput}" товаров не найдено.`);
                 playErrorBeep();
+                return;
+            }
+
+            const validItems = showBad 
+                ? allValidItems 
+                : allValidItems.filter(item => normalizeQualityStatus(item.quality_status) === "");
+
+            if (validItems.length === 0 && !showBad) {
+                showWarningHint(`По запросу "${originalInput}" нет доступного товара (найдены только позиции Карантин или Брак — включите фильтр во вкладке «⚙️ Настройки»).`);
                 return;
             }
 
@@ -1058,15 +1196,24 @@
                 });
 
                 const sortedAddresses = Object.keys(cellsMap).sort((a, b) => a.localeCompare(b));
+                let normalCards = [], quarantineCards = [], defectCards = [];
 
                 sortedAddresses.forEach(addr => {
                     const itemsInCell = cellsMap[addr];
                     const hasMixMarkers = itemsInCell.some(i => (i.purpose || '').trim() === 'СБХран' || (i.purpose || '').trim() === 'СБХран+');
                     const isMix = itemsInCell.length > 1 || hasMixMarkers;
+                    const hasDefect = itemsInCell.some(i => normalizeQualityStatus(i.quality_status) === 'Брак');
+                    const hasQuarantine = itemsInCell.some(i => normalizeQualityStatus(i.quality_status) === 'Карантин');
 
+                    let qBadge = '';
+                    if (hasDefect) qBadge += '<span class="quality-badge defect">🛑 БРАК</span> ';
+                    if (hasQuarantine) qBadge += '<span class="quality-badge quarantine">⚠️ КАРАНТИН</span> ';
+
+                    let htmlCard = '';
                     if (isMix) {
-                        productsContainer.innerHTML += `
+                        htmlCard = `
                             <div class="result-card multi-item" style="border-left-color: #ff9500; background-color: #fff9f0;">
+                                ${qBadge ? '<div>' + qBadge + '</div>' : ''}
                                 <div class="result-item" style="font-size: 16px; color: #ff9500;"><strong>📍 Адрес хранения:</strong> <span style="font-weight: bold;">${addr}</span></div>
                                 <div class="result-item" style="font-weight: bold; color: #d97706; margin-top: 5px;">⚠️ СБОРНЫЙ МИКС-ПАЛЕТ (СБХран)</div>
                                 <button onclick="quickViewCell('${addr}')" style="margin-top:8px; width:100%; padding:8px; background:#ff9500; color:white; border:none; border-radius:6px; font-weight:bold; cursor:pointer; font-size:13px;">🔎 Открыть состав ячейки</button>
@@ -1077,9 +1224,13 @@
                             ? `<span class="sku-badge">${item.sku}</span>` 
                             : '<span class="sku-none">без артикула</span>';
                         const displayUnit = item.unit ? item.unit : 'шт.';
+                        const cardStyle = hasDefect 
+                            ? 'border-left-color: #ef4444; background-color: #fef2f2;' 
+                            : (hasQuarantine ? 'border-left-color: #eab308; background-color: #fefce8;' : 'border-left-color: #34c759;');
 
-                        productsContainer.innerHTML += `
-                            <div class="result-card" style="border-left-color: #34c759;">
+                        htmlCard = `
+                            <div class="result-card" style="${cardStyle}">
+                                ${qBadge ? '<div>' + qBadge + '</div>' : ''}
                                 <div class="result-item" style="font-size: 16px; color: #34c759;"><strong>📍 Адрес хранения:</strong> <span>${item.address}</span></div>
                                 <div class="result-item"><strong>Артикул:</strong> ${skuHtml}</div>
                                 <div class="result-item"><strong>Наименование:</strong> <span style="font-weight: 500;">${item.title}</span></div>
@@ -1088,11 +1239,17 @@
                                 <div class="result-item"><strong>Дата производства:</strong> <span>${item.production_date || '—'}</span></div>
                             </div>`;
                     }
+
+                    if (hasDefect) defectCards.push(htmlCard);
+                    else if (hasQuarantine) quarantineCards.push(htmlCard);
+                    else normalCards.push(htmlCard);
                 });
+
+                productsContainer.innerHTML = normalCards.join('') + quarantineCards.join('') + defectCards.join('');
             } else {
                 validItems.sort((a, b) => a.id - b.id);
-                let i = 0;
-                let groupCounter = 1;
+                let i = 0, groupCounter = 1;
+                let normalCards = [], quarantineCards = [], defectCards = [];
 
                 while (i < validItems.length) {
                     let currentItem = validItems[i];
@@ -1107,23 +1264,46 @@
                         }
 
                         const stringifiedIds = JSON.stringify(mixBlockItems.map(item => item.id));
+                        const hasDefect = mixBlockItems.some(b => normalizeQualityStatus(b.quality_status) === 'Брак');
+                        const hasQuarantine = mixBlockItems.some(b => normalizeQualityStatus(b.quality_status) === 'Карантин');
+                        
+                        let qTag = '';
+                        if (hasDefect) qTag += ' <span class="quality-badge defect" style="margin-bottom:0;">🛑 БРАК</span>';
+                        if (hasQuarantine) qTag += ' <span class="quality-badge quarantine" style="margin-bottom:0;">⚠️ КАРАНТИН</span>';
 
-                        productsContainer.innerHTML += `
+                        const htmlBlock = `
                             <div class="result-card multi-item" style="border-left-color: #ff9500; background-color: #fff9f0;">
                                 <div class="result-item" style="font-size: 16px; color: #ff9500;"><strong>📍 Зона:</strong> <span style="font-weight: bold;">${currentItem.address}</span></div>
-                                <div class="result-item" style="font-weight: bold; color: #d97706; margin-top: 5px;">⚠️ СБОРНЫЙ ПАЛЕТ №${groupCounter} (${mixBlockItems.length} поз.)</div>
+                                <div class="result-item" style="font-weight: bold; color: #d97706; margin-top: 5px;">⚠️ СБОРНЫЙ ПАЛЕТ №${groupCounter} (${mixBlockItems.length} поз.) ${qTag}</div>
                                 <div class="result-item" style="font-size: 12px; color: #7f8c8d;">Содержит артикулы: ${mixBlockItems.map(b => b.sku || 'без арт.').join(', ')}</div>
                                 <button onclick='quickViewCell("${currentItem.address}", ${stringifiedIds})' style="margin-top:8px; width:100%; padding:8px; background:#ff9500; color:white; border:none; border-radius:6px; font-weight:bold; cursor:pointer; font-size:13px;">🔎 Раскрыть только этот палет</button>
                             </div>`;
+
+                        if (hasDefect) defectCards.push(htmlBlock);
+                        else if (hasQuarantine) quarantineCards.push(htmlBlock);
+                        else normalCards.push(htmlBlock);
+
                         groupCounter++;
                     } else {
                         let skuHtml = currentItem.sku && currentItem.sku !== '0' && currentItem.sku.trim() !== '' 
                             ? `<span class="sku-badge">${currentItem.sku}</span>` 
                             : '<span class="sku-none">без артикула</span>';
                         const displayUnit = currentItem.unit ? currentItem.unit : 'шт.';
+                        const qStatus = normalizeQualityStatus(currentItem.quality_status);
+                        
+                        let qBadge = '';
+                        let cardStyle = 'border-left-color: #34c759;';
+                        if (qStatus === 'Брак') {
+                            qBadge = '<div><span class="quality-badge defect">🛑 СТАТУС: БРАК</span></div>';
+                            cardStyle = 'border-left-color: #ef4444; background-color: #fef2f2;';
+                        } else if (qStatus === 'Карантин') {
+                            qBadge = '<div><span class="quality-badge quarantine">⚠️ СТАТУС: КАРАНТИН</span></div>';
+                            cardStyle = 'border-left-color: #eab308; background-color: #fefce8;';
+                        }
 
-                        productsContainer.innerHTML += `
-                            <div class="result-card" style="border-left-color: #34c759;">
+                        const htmlBlock = `
+                            <div class="result-card" style="${cardStyle}">
+                                ${qBadge}
                                 <div class="result-item" style="font-size: 16px; color: #34c759;"><strong>📍 Адрес хранения:</strong> <span>${currentItem.address}</span></div>
                                 <div class="result-item"><strong>Артикул:</strong> ${skuHtml}</div>
                                 <div class="result-item"><strong>Наименование:</strong> <span style="font-weight: 500;">${currentItem.title}</span></div>
@@ -1131,9 +1311,15 @@
                                 <div class="result-item"><strong>Назначение:</strong> <span>${currentItem.purpose || '—'}</span></div>
                                 <div class="result-item"><strong>Дата производства:</strong> <span>${currentItem.production_date || '—'}</span></div>
                             </div>`;
+
+                        if (qStatus === 'Брак') defectCards.push(htmlBlock);
+                        else if (qStatus === 'Карантин') quarantineCards.push(htmlBlock);
+                        else normalCards.push(htmlBlock);
+
                         i++;
                     }
                 }
+                productsContainer.innerHTML = normalCards.join('') + quarantineCards.join('') + defectCards.join('');
             }
         } catch (error) { showError(`Ошибка гибридного поиска: ${error.message}`); playErrorBeep(); }
     }
@@ -1141,6 +1327,7 @@
     async function executeSkuSearch(skuValue) {
         const addressHeader = document.getElementById('addressHeader');
         const productsContainer = document.getElementById('productsContainer');
+        const showBad = isQualityFilterEnabled();
 
         try {
             const response = await fetch(`${SUPABASE_URL}/rest/v1/test_products?sku=eq.${encodeURIComponent(skuValue)}`, {
@@ -1149,10 +1336,19 @@
             if (!response.ok) throw new Error(`Ошибка сервера: ${response.status}`);
             const data = await response.json();
 
-            const validItems = data.filter(item => item.title && item.title.trim() !== "");
-            if (validItems.length === 0) {
+            const allValidItems = data.filter(item => item.title && item.title.trim() !== "");
+            if (allValidItems.length === 0) {
                 showError(`Товар с артикулом "${skuValue}" не найден в базе остатков.`);
                 playErrorBeep();
+                return;
+            }
+
+            const validItems = showBad 
+                ? allValidItems 
+                : allValidItems.filter(item => normalizeQualityStatus(item.quality_status) === "");
+
+            if (validItems.length === 0 && !showBad) {
+                showWarningHint(`По артикулу "${skuValue}" нет доступного товара (весь остаток в статусе Карантин или Брак — включите фильтр во вкладке «⚙️ Настройки»).`);
                 return;
             }
 
@@ -1165,15 +1361,9 @@
                     <div class="result-item"><strong style="color: #5856d6;">Найденный товар:</strong> <span style="font-weight: bold; font-size: 16px;">${productInfo.title}</span></div>
                 </div>`;
 
-            validItems.sort((a, b) => {
-                const dateA = a.production_date ? new Date(a.production_date).getTime() : Infinity;
-                const dateB = b.production_date ? new Date(b.production_date).getTime() : Infinity;
-                if (dateA !== dateB) return dateA - dateB;
-                return (a.quantity !== null ? a.quantity : 0) - (b.quantity !== null ? b.quantity : 0);
-            });
-
-            const cellAddresses = [...new Set(validItems.map(item => item.address))];
-            await renderAnalogsListWithMixCheck(validItems, cellAddresses);
+            const sortedItems = sortProductsWithQuality(validItems);
+            const cellAddresses = [...new Set(sortedItems.map(item => item.address))];
+            await renderAnalogsListWithMixCheck(sortedItems, cellAddresses);
         } catch (error) { showError(`Ошибка поиска по артикулу: ${error.message}`); playErrorBeep(); }
     }
 
@@ -1195,10 +1385,20 @@
 
             const itemPurpose = (item.purpose || '').trim();
             const isMix = itemPurpose === 'СБХран' || itemPurpose === 'СБХран+';
+            const qStatus = normalizeQualityStatus(item.quality_status);
             
-            const rowStyle = isMix 
+            let rowStyle = isMix 
                 ? 'border-left: 4px solid #ff9500; background: #fff9f0;' 
                 : 'border-left: 4px solid #5856d6;';
+            
+            let qualityTagHtml = '';
+            if (qStatus === 'Брак') {
+                rowStyle = 'border-left: 4px solid #ef4444; background: #fef2f2; border: 1px solid #fca5a5; border-left-width: 4px;';
+                qualityTagHtml = ' <span class="quality-badge defect" style="font-size:10px; padding:1px 5px; margin-bottom:0;">🛑 БРАК</span>';
+            } else if (qStatus === 'Карантин') {
+                rowStyle = 'border-left: 4px solid #eab308; background: #fefce8; border: 1px solid #fde047; border-left-width: 4px;';
+                qualityTagHtml = ' <span class="quality-badge quarantine" style="font-size:10px; padding:1px 5px; margin-bottom:0;">⚠️ КАРАНТИН</span>';
+            }
 
             let claimBlockHtml = '';
             const itemQty = item.quantity !== null ? item.quantity : 0;
@@ -1217,7 +1417,7 @@
                 } else if (currentPicker) {
                     const isResting = pickerStatus === "отдыхаю";
                     const btnDisabledAttr = isResting ? "disabled" : "";
-                    const btnBgColor = isResting ? "#aeaeae" : "#5856d6";
+                    const btnBgColor = isResting ? "#aeaeae" : (qStatus === 'Брак' ? "#dc2626" : (qStatus === 'Карантин' ? "#d97706" : "#5856d6"));
                     const btnCursor = isResting ? "not-allowed" : "pointer";
                     const restWarning = isResting ? '<div style="color:#ff3b30; font-size:10px; font-weight:bold; margin-top:2px;">Кнопка заблокирована (Отдых)</div>' : '';
 
@@ -1226,7 +1426,7 @@
                             <div style="display: flex; gap: 6px; align-items: center;">
                                 <input type="number" id="claimQty_analog_${item.id}" value="${itemQty}" min="1" max="${itemQty}" 
                                        style="width: 65px; padding: 4px; font-size: 13px; text-align: center; border: 1px solid #c7c7cc; border-radius: 4px;" ${isResting ? 'disabled' : ''}>
-                                <button onclick="executeClaimAction(${item.id}, '${escapeHtml(item.sku || '')}', '${escapeHtml(item.title)}', '${escapeHtml(item.address)}', '${escapeHtml(item.purpose || '')}', '${unitStr}', '${escapeHtml(item.batch || '')}', '${item.production_date || ''}')" 
+                                <button onclick="executeClaimAction(this, ${item.id}, '${escapeHtml(item.sku || '')}', '${escapeHtml(item.title)}', '${escapeHtml(item.address)}', '${escapeHtml(item.purpose || '')}', '${unitStr}', '${escapeHtml(item.batch || '')}', '${item.production_date || ''}', '${escapeHtml(qStatus)}')" 
                                         style="padding: 4px 10px; background: ${btnBgColor}; color: white; border: none; border-radius: 4px; font-weight: bold; cursor: ${btnCursor}; font-size: 12px;" ${btnDisabledAttr}>
                                     Забрать
                                 </button>
@@ -1238,8 +1438,8 @@
 
             analogsList.innerHTML += `
                 <div class="analog-row" style="${rowStyle}">
-                    <div style="display: flex; justify-content: space-between; font-weight: bold;">
-                        <div>📍 Ячейка: ${item.address} ${isMix ? '<span style="color:#ff9500; font-size:11px;">[В СБОРНОЙ]</span>' : ''}</div>
+                    <div style="display: flex; justify-content: space-between; font-weight: bold; align-items: center;">
+                        <div>📍 Ячейка: ${item.address} ${isMix ? '<span style="color:#ff9500; font-size:11px;">[В СБОРНОЙ]</span>' : ''}${qualityTagHtml}</div>
                         <div class="analog-qty" style="color: ${itemQty > 0 ? '#248a3d' : '#8e8e93'}">${itemQty} ${unitStr}</div>
                     </div>
                     <div class="analog-meta">
@@ -1257,14 +1457,22 @@
         errorBlock.innerText = text;
         errorBlock.style.display = 'block';
     }
-
-    function executeClaimAction(rowId, sku, title, address, purpose, unit, batch, productionDate) {
-        triggerVibration(50);
-        createOrderClaim(rowId, sku, title, address, purpose, unit, batch, productionDate);
+    function showWarningHint(text) {
+        const hintBlock = document.getElementById('warningHintBlock');
+        hintBlock.innerText = text;
+        hintBlock.style.display = 'block';
     }
 
-    // ГЛАВНАЯ ФУНКЦИЯ СОЗДАНИЯ ЗАЯВКИ НА СПИСАНИЕ
-    async function createOrderClaim(rowId, sku, title, address, purpose, unit, batch, productionDate) {
+    function executeClaimAction(btnElement, rowId, sku, title, address, purpose, unit, batch, productionDate, qualityStatus = '') {
+        if (isClaimProcessing) return;
+        triggerVibration(50);
+        createOrderClaim(btnElement, rowId, sku, title, address, purpose, unit, batch, productionDate, qualityStatus);
+    }
+
+    // ГЛАВНАЯ ФУНКЦИЯ СОЗДАНИЯ ЗАЯВКИ НА СПИСАНИЕ (С ЗАЩИТОЙ ОТ ДВОЙНОГО НАЖАТИЯ И ПРОВЕРКОЙ КАРАНТИН/БРАК)
+    async function createOrderClaim(btnElement, rowId, sku, title, address, purpose, unit, batch, productionDate, qualityStatus = '') {
+        if (isClaimProcessing) return;
+
         let qtyInput = document.getElementById(`claimQty_${rowId}`) || document.getElementById(`claimQty_analog_${rowId}`);
         if (!qtyInput) {
             alert("Ошибка: Не найдено поле ввода количества.");
@@ -1296,8 +1504,23 @@
             return;
         }
 
+        if (qualityStatus === 'Карантин' || qualityStatus === 'Брак') {
+            playErrorBeep();
+            const firstConfirm = confirm(`⚠️ ВНИМАНИЕ! Вы пытаетесь взять товар со статусом "${qualityStatus.toUpperCase()}"!\n\nТовар: ${title}\nЯчейка: ${address}\n\nВы точно уверены, что хотите взять эту позицию в работу?`);
+            if (!firstConfirm) {
+                return;
+            }
+        }
+
         if (!confirm(`Вы действительно хотите взять в работу товар из ячейки ${address} в количестве ${claimQty} ${unit}?`)) {
             return;
+        }
+
+        isClaimProcessing = true;
+        const originalBtnText = btnElement ? btnElement.innerText : '';
+        if (btnElement) {
+            btnElement.disabled = true;
+            btnElement.innerText = '⏳...';
         }
 
         try {
@@ -1339,6 +1562,9 @@
             });
 
             if (!responseClaim.ok) throw new Error(`Не удалось отправить заявку в базу.`);
+
+            const qualityPrefix = qualityStatus ? `[${qualityStatus.toUpperCase()}] ` : '';
+
             // ЭТАП 2.5: Отправляем системное уведомление в чат для Операторов и Начальников
             await fetch(`${SUPABASE_URL}/rest/v1/wms_messages`, {
                 method: 'POST',
@@ -1350,13 +1576,11 @@
                 },
                 body: JSON.stringify({
                     target_role: 'Операторы и Руководство',
-                    text: `📥 Кладовщик ${currentPicker} взял в работу товар "${title}" (${claimQty} ${unit}) из ячейки ${address}.`,
+                    text: `📥 ${qualityPrefix}Кладовщик ${currentPicker} взял в работу товар "${title}" (${claimQty} ${unit}) из ячейки ${address}.`,
                     trigger_by: currentPicker,
                     address: address
                 })
             });
-            // === ЭТАП 3: МОДУЛЬ ОПЕРАТОРА (ВЫРЕЗАН И ЗАМЕНЕН ЗАГЛАДКОЙ) ===
-            // TODO: Модуль отправки уведомлений. Прорабатывается в отдельном проекте
 
             alert(`✅ Товар успешно взят в работу вами (${currentPicker}). Заявка зафиксирована в СПБ.`);
             searchAddress();
@@ -1364,43 +1588,48 @@
         } catch (error) {
             alert(`❌ Произошла ошибка: ${error.message}`);
             playErrorBeep();
+            if (btnElement) {
+                btnElement.disabled = false;
+                btnElement.innerText = originalBtnText;
+            }
+        } finally {
+            isClaimProcessing = false;
         }
     }
-    // ПЕРЕКЛЮЧЕНИЕ ВКЛАДОК (SPA Логика)
+    // ПЕРЕКЛЮЧЕНИЕ ВКЛАДОК (SPA Логика: Поиск / Чат / Настройки)
     function switchTab(tabName) {
         activeTab = tabName;
-        var searchBtn = document.getElementById('tabSearchBtn');
-        var chatBtn = document.getElementById('tabChatBtn');
-        var chatSection = document.getElementById('chatSection');
-        
-        var searchElements = [
-            document.getElementById('toggleScanBtn'),
-            document.getElementById('videoContainer'),
-            document.querySelector('.divider'),
-            document.getElementById('addressInput'),
-            document.querySelector('.search-btn'),
-            document.getElementById('addressHeader'),
-            document.getElementById('productsContainer'),
-            document.getElementById('analogsSection')
-        ];
+        const searchBtn = document.getElementById('tabSearchBtn');
+        const chatBtn = document.getElementById('tabChatBtn');
+        const settingsBtn = document.getElementById('tabSettingsBtn');
+
+        const searchSection = document.getElementById('searchSection');
+        const chatSection = document.getElementById('chatSection');
+        const settingsSection = document.getElementById('settingsSection');
+
+        [searchBtn, chatBtn, settingsBtn].forEach(btn => {
+            if (btn) {
+                btn.style.background = '#e5e5ea';
+                btn.style.color = '#1c1c1e';
+            }
+        });
+
+        if (searchSection) searchSection.style.display = 'none';
+        if (chatSection) chatSection.style.display = 'none';
+        if (settingsSection) settingsSection.style.display = 'none';
 
         if (tabName === 'chat') {
-            if(searchBtn) { searchBtn.style.background = '#e5e5ea'; searchBtn.style.color = '#1c1c1e'; }
-            if(chatBtn) { chatBtn.style.background = '#007aff'; chatBtn.style.color = 'white'; }
-            if(chatSection) chatSection.style.display = 'block';
-            searchElements.forEach(function(el) { if(el) el.style.display = 'none'; });
+            if (chatBtn) { chatBtn.style.background = '#007aff'; chatBtn.style.color = 'white'; }
+            if (chatSection) chatSection.style.display = 'block';
             stopCamera();
             markAllMessagesAsRead();
+        } else if (tabName === 'settings') {
+            if (settingsBtn) { settingsBtn.style.background = '#007aff'; settingsBtn.style.color = 'white'; }
+            if (settingsSection) settingsSection.style.display = 'block';
+            stopCamera();
         } else {
-            if(searchBtn) { searchBtn.style.background = '#007aff'; searchBtn.style.color = 'white'; }
-            if(chatBtn) { chatBtn.style.background = '#e5e5ea'; chatBtn.style.color = '#1c1c1e'; }
-            if(chatSection) chatSection.style.display = 'none';
-            
-            if(document.getElementById('toggleScanBtn')) document.getElementById('toggleScanBtn').style.display = 'flex';
-            if(document.querySelector('.divider')) document.querySelector('.divider').style.display = 'block';
-            if(document.getElementById('addressInput')) document.getElementById('addressInput').style.display = 'block';
-            if(document.querySelector('.search-btn')) document.querySelector('.search-btn').style.display = 'block';
-            if(document.getElementById('productsContainer')) document.getElementById('productsContainer').style.display = 'block';
+            if (searchBtn) { searchBtn.style.background = '#007aff'; searchBtn.style.color = 'white'; }
+            if (searchSection) searchSection.style.display = 'block';
         }
     }
 
