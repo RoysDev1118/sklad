@@ -404,7 +404,7 @@
             const data = await response.json();
 
             if (data && data.length > 0) {
-                const employee = data;
+                const employee = data[0];
                 isDemoMode = false;
                 currentPicker = employee.name;
                 pickerStatus = employee.status || "отдыхаю";
