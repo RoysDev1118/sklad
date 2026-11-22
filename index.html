@@ -211,6 +211,8 @@
     let pcLinkIntervalId = null;
     let lastSeenMessageId = parseInt(localStorage.getItem('wms_last_msg_id') || '0', 10);
     let isClaimProcessing = false;
+    let isDemoMode = false;
+    let guestVideoStream = null;
 
     function isQualityFilterEnabled() {
         const toggle = document.getElementById('showDefectQuarantineToggle');
@@ -323,6 +325,13 @@
         }
     }
     function executeManualLogout() {
+        if (isDemoMode) {
+            if (confirm("Завершить демонстрационный просмотр?")) {
+                window.history.replaceState({}, document.title, window.location.pathname);
+                setViewingMode();
+            }
+            return;
+        }
         // Проверяем, компьютер это или телефон (по ширине экрана)
         const isDesktop = window.innerWidth > 768;
 
@@ -571,56 +580,6 @@
         }
     }
 
-    function updateAuthUiVisuals() {
-        const statusText = document.getElementById('authStatusText');
-        const statusBar = document.getElementById('secureAuthBar');
-        const managerBlock = document.getElementById('managerSettingsBlock');
-        const logoutBtn = document.getElementById('logoutBtn');
-        const linkPcBtn = document.getElementById('linkPcBtn');
-        if (linkPcBtn) {
-            // Кнопка покажется только если режим просмотра И это экран ПК (шире 768px)
-            const isDesktop = window.innerWidth > 768;
-            linkPcBtn.style.display = (!currentPicker && isDesktop) ? "block" : "none";
-        }
-        if (managerBlock) {
-            if (currentRole === "ЗавСклад") {
-                managerBlock.style.display = "flex";
-                // Восстанавливаем сохраненные состояния галочек из localStorage
-                document.getElementById('managerNotifyToggle').checked = localStorage.getItem('wms_mgr_notify') !== 'false';
-                document.getElementById('managerRestNotifyToggle').checked = localStorage.getItem('wms_mgr_rest_notify') === 'true';
-                // Синхронизируем доступность второй галочки
-                toggleManagerNotifications();
-            } else {
-                managerBlock.style.display = "none";
-            }
-        }
-        const pickerHistoryBlock = document.getElementById('pickerHistorySettingsBlock');
-        if (pickerHistoryBlock) {
-            if (currentPicker && currentRole === "Кладовщик") {
-                pickerHistoryBlock.style.display = "flex";
-                const ownToggle = document.getElementById('pickerOwnClaimsToggle');
-                if (ownToggle) {
-                    ownToggle.checked = localStorage.getItem('wms_picker_own_claims') === 'true';
-                }
-            } else {
-                pickerHistoryBlock.style.display = "none";
-            }
-        }
-
-        if (logoutBtn) {
-            // Кнопка-иконка отображается как flex для правильного центрирования эмодзи двери
-            logoutBtn.style.display = currentPicker ? "flex" : "none";
-        }
-        if (pickerStatus === "работаю") {
-            statusText.innerHTML = `👤 [${currentRole}] <strong>${currentPicker}</strong> (В РАБОТЕ)`;
-            statusBar.style.backgroundColor = "#e6f4ea";
-            statusText.style.color = "#248a3d";
-        } else {
-            statusText.innerHTML = `👤 [${currentRole}] <strong>${currentPicker}</strong> (ОТДЫХАЮ)`;
-            statusBar.style.backgroundColor = "#f2f2f7";
-            statusText.style.color = "#8e8e93";
-        }
-    }
         // ЛОГИКА ДЛЯ КОМПЬЮТЕРА: Генерация QR и ожидание токена от смартфона
     function startDesktopLinking() {
         if ("Notification" in window && Notification.permission !== "granted" && Notification.permission !== "denied") {
@@ -1032,6 +991,111 @@
         } catch (err) {
             alert("Критическая ошибка привязки устройства: " + err.message);
             playErrorBeep();
+        }
+    }
+    async function toggleGuestScanner() {
+        const videoContainer = document.getElementById('guestVideoContainer');
+        const video = document.getElementById('guestWebcamVideo');
+        const btn = document.getElementById('guestScanBtn');
+        const errBlock = document.getElementById('guestErrorBlock');
+        if (errBlock) errBlock.style.display = 'none';
+
+        if (!guestVideoStream) {
+            try {
+                videoContainer.style.display = 'block';
+                btn.innerText = "🛑 Остановить сканер";
+                btn.style.backgroundColor = "#ff3b30";
+
+                guestVideoStream = await navigator.mediaDevices.getUserMedia({
+                    video: { facingMode: "environment" },
+                    audio: false
+                });
+                video.srcObject = guestVideoStream;
+                await video.play();
+                startGuestQrLoop(video);
+            } catch (err) {
+                if (errBlock) {
+                    errBlock.innerText = "Не удалось включить камеру: " + err.message;
+                    errBlock.style.display = 'block';
+                }
+                playErrorBeep();
+                stopGuestCamera();
+            }
+        } else {
+            stopGuestCamera();
+        }
+    }
+
+    function startGuestQrLoop(video) {
+        const useDetector = window.BarcodeDetector !== undefined;
+        let detector = useDetector ? new BarcodeDetector({ formats: ['qr_code'] }) : null;
+
+        const loop = () => {
+            if (!guestVideoStream) return;
+            if (!video || video.readyState !== video.HAVE_ENOUGH_DATA) {
+                requestAnimationFrame(loop);
+                return;
+            }
+
+            const processCode = async (raw) => {
+                stopGuestCamera();
+                if (raw.toLowerCase().startsWith('login:')) {
+                    await executeSecureLogin(raw);
+                } else if (raw.toLowerCase().startsWith('demo:')) {
+                    await tryActivateDemoInvite(raw);
+                } else {
+                    const errBlock = document.getElementById('guestErrorBlock');
+                    if (errBlock) {
+                        errBlock.innerText = "Этот QR-код не предназначен для входа. Отсканируйте QR сотрудника (login:...) или пригласительный QR.";
+                        errBlock.style.display = 'block';
+                    }
+                    playErrorBeep();
+                }
+            };
+
+            if (detector) {
+                detector.detect(video).then(barcodes => {
+                    if (barcodes.length > 0) {
+                        processCode(barcodes[0].rawValue.trim());
+                        return;
+                    }
+                    requestAnimationFrame(loop);
+                }).catch(() => {
+                    detector = null;
+                    requestAnimationFrame(loop);
+                });
+                return;
+            }
+
+            const canvas = document.createElement('canvas');
+            canvas.width = video.videoWidth;
+            canvas.height = video.videoHeight;
+            const ctx = canvas.getContext('2d');
+            ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+            const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+            const code = jsQR(imageData.data, canvas.width, canvas.height);
+            if (code) {
+                processCode(code.data.trim());
+                return;
+            }
+            requestAnimationFrame(loop);
+        };
+        loop();
+    }
+
+    function stopGuestCamera() {
+        const videoContainer = document.getElementById('guestVideoContainer');
+        const video = document.getElementById('guestWebcamVideo');
+        const btn = document.getElementById('guestScanBtn');
+        if (guestVideoStream) {
+            guestVideoStream.getTracks().forEach(track => track.stop());
+            guestVideoStream = null;
+        }
+        if (video) video.srcObject = null;
+        if (videoContainer) videoContainer.style.display = 'none';
+        if (btn) {
+            btn.innerText = "📷 Активировать по QR-коду";
+            btn.style.backgroundColor = "#34c759";
         }
     }
 
@@ -1978,7 +2042,7 @@
         })
         .then(function(data) {
             if (data && data.length > 0) {
-                var maxId = data.id;
+                var maxId = data[0].id;
                 localStorage.setItem('wms_last_msg_id', maxId);
                 lastSeenMessageId = maxId;
             }
@@ -2083,14 +2147,26 @@ window.addEventListener('appinstalled', (evt) => {
     }
 });
 
-// 4. Регистрация Service Worker (обязательно для PWA)
+// 4. Регистрация Service Worker с автообновлением при выходе новой сборки
 if ('serviceWorker' in navigator) {
     window.addEventListener('load', () => {
         navigator.serviceWorker.register('sw.js')
-            .then(reg => console.log('SW зарегистрирован!', reg))
+            .then(reg => {
+                console.log('SW зарегистрирован!', reg);
+                reg.update();
+            })
             .catch(err => console.error('Ошибка SW:', err));
     });
+
+    let refreshing = false;
+    navigator.serviceWorker.addEventListener('controllerchange', () => {
+        if (!refreshing) {
+            refreshing = true;
+            window.location.reload();
+        }
+    });
 }
+
 </script>
 </body>
 </html>
