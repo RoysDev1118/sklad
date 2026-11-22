@@ -139,6 +139,18 @@
             <div class="analogs-title">Также этот товар лежит в ячейках:</div>
             <div id="analogsList"></div>
         </div>
+
+        <!-- МОИ АКТИВНЫЕ ОТБОРЫ (ОЖИДАЮТ ОПЕРАТОРА) -->
+        <div id="myActiveClaimsSection" style="display: none; margin-top: 22px; padding-top: 15px; border-top: 2px dashed #e5e5ea; width: 100%;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+                <div style="font-size: 13px; font-weight: bold; color: #5856d6; text-transform: uppercase; letter-spacing: 0.5px;">📋 Мои активные отборы:</div>
+                <button onclick="loadMyActiveClaims()" title="Обновить список" style="background: #f2f2f7; border: none; border-radius: 6px; padding: 4px 8px; font-size: 12px; cursor: pointer; color: #3a3a3c;">🔄</button>
+            </div>
+            <div style="font-size: 11px; color: #8e8e93; margin-bottom: 10px; line-height: 1.3;">
+                Пока оператор не загрузил заявку в базу, ошибочный отбор можно отменить:
+            </div>
+            <div id="myActiveClaimsList" style="display: flex; flex-direction: column; gap: 8px;"></div>
+        </div>
     </div>
 
     <!-- ЭКРАН ЧАТА -->
@@ -195,7 +207,7 @@
 
     </div> <!-- Конец #authorizedWorkspace -->
 
-    <div class="version-tag">сборка: 1.6.5 (Restricted Access, Invite Demo Mode & Auto-Cache SW)</div>
+    <div class="version-tag">сборка: 1.6.6 (Order Cancel, number_row Sync & Locked Analog Badge)</div>
 </div>
 
 <script>
@@ -510,8 +522,12 @@
             const isDesktop = window.innerWidth > 768;
             linkPcBtn.style.display = isDesktop ? "block" : "none";
         }
+        const myClaimsSection = document.getElementById('myActiveClaimsSection');
+        if (myClaimsSection) myClaimsSection.style.display = 'none';
+
         stopDesktopLinking();
         clearSearchResults();
+    }
     }
 
     function updateAuthUiVisuals() {
@@ -578,6 +594,8 @@
             statusBar.style.backgroundColor = "#f2f2f7";
             statusText.style.color = "#8e8e93";
         }
+
+        loadMyActiveClaims();
     }
 
         // ЛОГИКА ДЛЯ КОМПЬЮТЕРА: Генерация QR и ожидание токена от смартфона
@@ -1336,7 +1354,7 @@
                             <input type="number" id="claimQty_${targetItem.id}" ${valAttr} min="1" ${maxAttr} 
                                    style="width: 80px; margin-bottom: 0; padding: 8px; font-size: 15px; letter-spacing: 0; text-align: center;" ${isResting ? 'disabled' : ''}>
                             <span style="font-size: 14px; color: #505050; font-weight: 500;">${displayUnit}</span>
-                            <button onclick="executeClaimAction(this, ${targetItem.id}, '${escapeHtml(targetItem.sku || '')}', '${escapeHtml(targetItem.title)}', '${escapeHtml(targetItem.address)}', '${escapeHtml(targetItem.purpose || '')}', '${displayUnit}', '${escapeHtml(targetItem.batch || '')}', '${targetItem.production_date || ''}', '${escapeHtml(qStatus)}')"  
+                            <button onclick="executeClaimAction(this, ${targetItem.id}, '${escapeHtml(targetItem.sku || '')}', '${escapeHtml(targetItem.title)}', '${escapeHtml(targetItem.address)}', '${escapeHtml(targetItem.purpose || '')}', '${displayUnit}', '${escapeHtml(targetItem.batch || '')}', '${targetItem.production_date || ''}', '${escapeHtml(qStatus)}', ${targetItem.number_row ?? 'null'})"  
                                     style="flex: 1; padding: 10px; background-color: ${btnBgColor}; color: white; border: none; border-radius: 6px; font-weight: bold; cursor: ${btnCursor}; font-size: 14px;" ${btnDisabledAttr}>
                                 Взять в работу
                             </button>
@@ -1630,29 +1648,27 @@
                             🔎 Открыть сборную ячейку и раскрыть состав
                         </button>
                     </div>`;
-            } else if (itemQty > 0) {
-                if (item.status === 'locked') {
-                    claimBlockHtml = `<div style="color:#ff3b30; font-size:11px; font-weight:bold; margin-top:5px;">🛑 БЛОКИРОВАН (В работе)</div>`;
-                } else if (currentPicker) {
-                    const isResting = pickerStatus === "отдыхаю";
-                    const btnDisabledAttr = isResting ? "disabled" : "";
-                    const btnBgColor = isResting ? "#aeaeae" : (qStatus === 'Брак' ? "#dc2626" : (qStatus === 'Карантин' ? "#d97706" : "#5856d6"));
-                    const btnCursor = isResting ? "not-allowed" : "pointer";
-                    const restWarning = isResting ? '<div style="color:#ff3b30; font-size:10px; font-weight:bold; margin-top:2px;">Кнопка заблокирована (Отдых)</div>' : '';
+            } else if (item.status === 'locked') {
+                claimBlockHtml = `<div style="color:#ff3b30; font-size:11px; font-weight:bold; margin-top:5px;">🛑 БЛОКИРОВАН (В работе)</div>`;
+            } else if (itemQty > 0 && currentPicker) {
+                const isResting = pickerStatus === "отдыхаю";
+                const btnDisabledAttr = isResting ? "disabled" : "";
+                const btnBgColor = isResting ? "#aeaeae" : (qStatus === 'Брак' ? "#dc2626" : (qStatus === 'Карантин' ? "#d97706" : "#5856d6"));
+                const btnCursor = isResting ? "not-allowed" : "pointer";
+                const restWarning = isResting ? '<div style="color:#ff3b30; font-size:10px; font-weight:bold; margin-top:2px;">Кнопка заблокирована (Отдых)</div>' : '';
 
-                    claimBlockHtml = `
-                        <div style="margin-top: 8px; display: flex; flex-direction: column; border-top: 1px dashed #d1d1d6; padding-top: 6px;">
-                            <div style="display: flex; gap: 6px; align-items: center;">
-                                <input type="number" id="claimQty_analog_${item.id}" value="${itemQty}" min="1" max="${itemQty}" 
-                                       style="width: 65px; padding: 4px; font-size: 13px; text-align: center; border: 1px solid #c7c7cc; border-radius: 4px;" ${isResting ? 'disabled' : ''}>
-                                <button onclick="executeClaimAction(this, ${item.id}, '${escapeHtml(item.sku || '')}', '${escapeHtml(item.title)}', '${escapeHtml(item.address)}', '${escapeHtml(item.purpose || '')}', '${unitStr}', '${escapeHtml(item.batch || '')}', '${item.production_date || ''}', '${escapeHtml(qStatus)}')" 
-                                        style="padding: 4px 10px; background: ${btnBgColor}; color: white; border: none; border-radius: 4px; font-weight: bold; cursor: ${btnCursor}; font-size: 12px;" ${btnDisabledAttr}>
-                                    Забрать
-                                </button>
-                            </div>
-                            ${restWarning}
-                        </div>`;
-                }
+                claimBlockHtml = `
+                    <div style="margin-top: 8px; display: flex; flex-direction: column; border-top: 1px dashed #d1d1d6; padding-top: 6px;">
+                        <div style="display: flex; gap: 6px; align-items: center;">
+                            <input type="number" id="claimQty_analog_${item.id}" value="${itemQty}" min="1" max="${itemQty}" 
+                                   style="width: 65px; padding: 4px; font-size: 13px; text-align: center; border: 1px solid #c7c7cc; border-radius: 4px;" ${isResting ? 'disabled' : ''}>
+                            <button onclick="executeClaimAction(this, ${item.id}, '${escapeHtml(item.sku || '')}', '${escapeHtml(item.title)}', '${escapeHtml(item.address)}', '${escapeHtml(item.purpose || '')}', '${unitStr}', '${escapeHtml(item.batch || '')}', '${item.production_date || ''}', '${escapeHtml(qStatus)}', ${item.number_row ?? 'null'})" 
+                                    style="padding: 4px 10px; background: ${btnBgColor}; color: white; border: none; border-radius: 4px; font-weight: bold; cursor: ${btnCursor}; font-size: 12px;" ${btnDisabledAttr}>
+                                Забрать
+                            </button>
+                        </div>
+                        ${restWarning}
+                    </div>`;
             }
 
             analogsList.innerHTML += `
@@ -1682,15 +1698,15 @@
         hintBlock.style.display = 'block';
     }
 
-    function executeClaimAction(btnElement, rowId, sku, title, address, purpose, unit, batch, productionDate, qualityStatus = '') {
+    function executeClaimAction(btnElement, rowId, sku, title, address, purpose, unit, batch, productionDate, qualityStatus = '', numberRow = null) {
         if (isClaimProcessing) return;
         triggerVibration(50);
-        createOrderClaim(btnElement, rowId, sku, title, address, purpose, unit, batch, productionDate, qualityStatus);
+        createOrderClaim(btnElement, rowId, sku, title, address, purpose, unit, batch, productionDate, qualityStatus, numberRow);
     }
 
     // ГЛАВНАЯ ФУНКЦИЯ СОЗДАНИЯ ЗАЯВКИ НА СПИСАНИЕ (С ЗАЩИТОЙ ОТ ДВОЙНОГО НАЖАТИЯ И ПРОВЕРКОЙ КАРАНТИН/БРАК)
-    // ГЛАВНАЯ ФУНКЦИЯ СОЗДАНИЯ ЗАЯВКИ НА СПИСАНИЕ (С ПРОВЕРКОЙ АКТУАЛЬНОГО ОСТАТКА И ЧАСТИЧНЫМ ОТБОРОМ)
-    async function createOrderClaim(btnElement, rowId, sku, title, address, purpose, unit, batch, productionDate, qualityStatus = '') {
+    // ГЛАВНАЯ ФУНКЦИЯ СОЗДАНИЯ ЗАЯВКИ НА СПИСАНИЕ (С ПРОВЕРКОЙ АКТУАЛЬНОГО ОСТАТКА, ЧАСТИЧНЫМ ОТБОРОМ И NUMBER_ROW)
+    async function createOrderClaim(btnElement, rowId, sku, title, address, purpose, unit, batch, productionDate, qualityStatus = '', numberRow = null) {
         if (isClaimProcessing) return;
 
         let qtyInput = document.getElementById(`claimQty_${rowId}`) || document.getElementById(`claimQty_analog_${rowId}`);
@@ -1810,6 +1826,7 @@
                     unit: unit,
                     batch: batch,
                     production_date: productionDate || null,
+                    number_row: numberRow,
                     status: 'new'
                 })
             });
@@ -1837,6 +1854,7 @@
 
             const leftInfo = newQty > 0 ? `\nВ ячейке осталось: ${newQty} ${unit}.` : `\nЯчейка полностью выбрана и заблокирована.`;
             alert(`✅ Товар успешно взят в работу вами (${currentPicker}).${leftInfo}`);
+            await loadMyActiveClaims();
             searchAddress();
 
         } catch (error) {
@@ -1850,6 +1868,201 @@
             isClaimProcessing = false;
         }
     }
+
+    // ЗАГРУЗКА НЕОБРАБОТАННЫХ ЗАЯВОК ТЕКУЩЕГО СОТРУДНИКА (status = 'new')
+    async function loadMyActiveClaims() {
+        const section = document.getElementById('myActiveClaimsSection');
+        const listContainer = document.getElementById('myActiveClaimsList');
+        if (!section || !listContainer) return;
+
+        if (!currentPicker || isDemoMode) {
+            section.style.display = 'none';
+            listContainer.innerHTML = '';
+            return;
+        }
+
+        try {
+            const response = await fetch(`${SUPABASE_URL}/rest/v1/order_claims?picker_name=eq.${encodeURIComponent(currentPicker)}&status=eq.new&order=id.desc`, {
+                headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}` }
+            });
+            if (!response.ok) return;
+
+            const claims = await response.json();
+            if (!claims || claims.length === 0) {
+                section.style.display = 'none';
+                listContainer.innerHTML = '';
+                return;
+            }
+
+            listContainer.innerHTML = '';
+            claims.forEach(claim => {
+                const unitStr = claim.unit || 'шт.';
+                const timeStr = claim.created_at 
+                    ? new Date(claim.created_at).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' }) 
+                    : '';
+                const skuBadge = claim.sku ? `<span class="sku-badge" style="font-size:11px; padding:1px 5px;">${escapeHtml(claim.sku)}</span>` : '';
+
+                listContainer.innerHTML += `
+                    <div style="background: #f5f3ff; border: 1px solid #ddd6fe; border-left: 4px solid #5856d6; border-radius: 8px; padding: 10px; font-size: 13px;">
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+                            <span style="font-weight: bold; color: #1c1c1e;">📍 Ячейка: <span style="color:#5856d6;">${escapeHtml(claim.address)}</span> ${skuBadge}</span>
+                            <span style="font-size: 11px; color: #8e8e93;">⏱️ ${timeStr}</span>
+                        </div>
+                        <div style="color: #2c3e50; font-weight: 500; margin-bottom: 6px; line-height: 1.3;">${escapeHtml(claim.title)}</div>
+                        <div style="display: flex; justify-content: space-between; align-items: center; gap: 8px; border-top: 1px dashed #ddd6fe; padding-top: 6px;">
+                            <span style="font-weight: bold; color: #5856d6;">Взято: ${claim.quantity} ${escapeHtml(unitStr)}</span>
+                            <button onclick="cancelOrderClaim(this, ${claim.id}, ${claim.number_row ?? 'null'}, '${escapeHtml(claim.address)}', '${escapeHtml(claim.title)}', ${claim.quantity}, '${escapeHtml(unitStr)}', '${escapeHtml(claim.batch || '')}')" 
+                                    style="padding: 6px 10px; background: #ff3b30; color: white; border: none; border-radius: 6px; font-size: 12px; font-weight: bold; cursor: pointer;">
+                                ↩️ Отменить
+                            </button>
+                        </div>
+                    </div>`;
+            });
+
+            section.style.display = 'block';
+        } catch (err) {
+            console.error("Ошибка загрузки активных заявок:", err);
+        }
+    }
+
+    // ОТМЕНА ОШИБОЧНОЙ ЗАЯВКИ КЛАДОВЩИКОМ (С ПРОВЕРКОЙ СТАТУСА 'new' И ВОЗВРАТОМ ОСТАТКА)
+    async function cancelOrderClaim(btnElement, claimId, numberRow, address, title, claimQty, unit, batch) {
+        if (isClaimProcessing) return;
+
+        if (!currentPicker) {
+            alert("Ошибка: Необходимо авторизоваться.");
+            playErrorBeep();
+            return;
+        }
+        if (pickerStatus === "отдыхаю") {
+            alert("Ошибка: Отмена заявки недоступна в режиме 'ОТДЫХАЮ'! Отметь приход на двери.");
+            playErrorBeep();
+            return;
+        }
+
+        if (!confirm(`Отменить отбор товара "${title}" (${claimQty} ${unit}) из ячейки ${address} и вернуть его на остаток?`)) {
+            return;
+        }
+
+        isClaimProcessing = true;
+        const originalText = btnElement ? btnElement.innerText : '';
+        if (btnElement) {
+            btnElement.disabled = true;
+            btnElement.innerText = '⏳...';
+        }
+
+        try {
+            // ШАГ 1: Проверяем, не забрал ли уже эту заявку оператор (status === 'new')
+            const checkClaimRes = await fetch(`${SUPABASE_URL}/rest/v1/order_claims?id=eq.${claimId}&select=id,status`, {
+                headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}` }
+            });
+            if (!checkClaimRes.ok) throw new Error("Не удалось проверить статус заявки в базе.");
+
+            const claimRows = await checkClaimRes.json();
+            if (!claimRows || claimRows.length === 0 || claimRows[0].status !== 'new') {
+                alert("❌ Оператор уже загрузил эту заявку в основную базу (или она уже отменена)! Обратитесь к оператору для ручной корректировки.");
+                playErrorBeep();
+                await loadMyActiveClaims();
+                return;
+            }
+
+            // ШАГ 2: Ищем исходную строку в test_products (сначала по number_row, при отсутствии — по address + title)
+            let productRow = null;
+            if (numberRow !== null && numberRow !== undefined && !isNaN(Number(numberRow))) {
+                const byRowRes = await fetch(`${SUPABASE_URL}/rest/v1/test_products?number_row=eq.${Number(numberRow)}&address=eq.${encodeURIComponent(address)}&select=id,quantity,status`, {
+                    headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}` }
+                });
+                if (byRowRes.ok) {
+                    const rows = await byRowRes.json();
+                    if (rows && rows.length > 0) productRow = rows[0];
+                }
+            }
+
+            if (!productRow) {
+                let fallbackUrl = `${SUPABASE_URL}/rest/v1/test_products?address=eq.${encodeURIComponent(address)}&title=eq.${encodeURIComponent(title)}&select=id,quantity,status,batch`;
+                const fallbackRes = await fetch(fallbackUrl, {
+                    headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}` }
+                });
+                if (fallbackRes.ok) {
+                    const rows = await fallbackRes.json();
+                    if (rows && rows.length > 0) {
+                        productRow = rows.find(r => (r.batch || '') === (batch || '')) || rows[0];
+                    }
+                }
+            }
+
+            // Возвращаем остаток и снимаем блокировку, если строка найдена в текущем слепке
+            if (productRow) {
+                const currentStockQty = productRow.quantity !== null ? parseInt(productRow.quantity, 10) : 0;
+                const restoredQty = currentStockQty + parseInt(claimQty, 10);
+
+                const restoreRes = await fetch(`${SUPABASE_URL}/rest/v1/test_products?id=eq.${productRow.id}`, {
+                    method: 'PATCH',
+                    headers: {
+                        'apikey': SUPABASE_KEY,
+                        'Authorization': `Bearer ${SUPABASE_KEY}`,
+                        'Content-Type': 'application/json',
+                        'Prefer': 'return=minimal'
+                    },
+                    body: JSON.stringify({
+                        quantity: restoredQty,
+                        status: null
+                    })
+                });
+                if (!restoreRes.ok) throw new Error("Не удалось вернуть количество на остаток ячейки.");
+            }
+
+            // ШАГ 3: Переводим заявку в статус 'canceled'
+            const cancelRes = await fetch(`${SUPABASE_URL}/rest/v1/order_claims?id=eq.${claimId}`, {
+                method: 'PATCH',
+                headers: {
+                    'apikey': SUPABASE_KEY,
+                    'Authorization': `Bearer ${SUPABASE_KEY}`,
+                    'Content-Type': 'application/json',
+                    'Prefer': 'return=minimal'
+                },
+                body: JSON.stringify({ status: 'canceled' })
+            });
+            if (!cancelRes.ok) throw new Error("Не удалось обновить статус заявки на canceled.");
+
+            // ШАГ 4: Отправляем уведомление об отмене в чат (видит Оператор, ЗавСклад и сам Кладовщик при включенной галочке)
+            await fetch(`${SUPABASE_URL}/rest/v1/wms_messages`, {
+                method: 'POST',
+                headers: {
+                    'apikey': SUPABASE_KEY,
+                    'Authorization': `Bearer ${SUPABASE_KEY}`,
+                    'Content-Type': 'application/json',
+                    'Prefer': 'return=minimal'
+                },
+                body: JSON.stringify({
+                    target_role: 'Операторы и Руководство',
+                    text: `↩️ Кладовщик ${currentPicker} ОТМЕНИЛ отбор товара "${title}" (${claimQty} ${unit}) из ячейки ${address}. Остаток возвращен.`,
+                    trigger_by: currentPicker,
+                    address: address
+                })
+            });
+
+            triggerVibration(80);
+            alert(`↩️ Заявка отменена! Товар (${claimQty} ${unit}) возвращен в ячейку ${address}.`);
+            await loadMyActiveClaims();
+
+            const currentInput = document.getElementById('addressInput').value.trim();
+            if (currentInput) {
+                searchAddress();
+            }
+
+        } catch (err) {
+            alert(`❌ Ошибка при отмене заявки: ${err.message}`);
+            playErrorBeep();
+            if (btnElement) {
+                btnElement.disabled = false;
+                btnElement.innerText = originalText;
+            }
+        } finally {
+            isClaimProcessing = false;
+        }
+    }
+
     // ПЕРЕКЛЮЧЕНИЕ ВКЛАДОК (SPA Логика: Поиск / Чат / Настройки)
     function switchTab(tabName) {
         activeTab = tabName;
