@@ -211,8 +211,6 @@
     let pcLinkIntervalId = null;
     let lastSeenMessageId = parseInt(localStorage.getItem('wms_last_msg_id') || '0', 10);
     let isClaimProcessing = false;
-    let isDemoMode = false;
-    let guestVideoStream = null;
 
     function isQualityFilterEnabled() {
         const toggle = document.getElementById('showDefectQuarantineToggle');
@@ -326,14 +324,6 @@
     }
     function executeManualLogout() {
         // Проверяем, компьютер это или телефон (по ширине экрана)
-        if (isDemoMode) {
-            if (confirm("Завершить демонстрационный просмотр?")) {
-                // Убираем ?invite=... из адресной строки без перезагрузки
-                window.history.replaceState({}, document.title, window.location.pathname);
-                setViewingMode();
-            }
-            return;
-        }
         const isDesktop = window.innerWidth > 768;
 
         if (pickerStatus === "работаю" && !isDesktop) {
@@ -388,23 +378,10 @@
 
     // Шаг 2: Авторизация по токену и получение рабочего статуса
     async function checkDeviceAuthorization() {
-        // 1. Проверяем, не открыта ли страница по пригласительной ссылке (?invite=...)
-        const urlParams = new URLSearchParams(window.location.search);
-        const inviteCode = urlParams.get('invite');
-        if (inviteCode) {
-            const demoActivated = await tryActivateDemoInvite(inviteCode.trim());
-            if (demoActivated) return;
-        }
-
-        // 2. Проверяем сохраненный демо-код в текущей сессии (sessionStorage)
-        const sessionDemoCode = sessionStorage.getItem('wms_demo_code');
-        if (sessionDemoCode) {
-            const demoActivated = await tryActivateDemoInvite(sessionDemoCode);
-            if (demoActivated) return;
-        }
-
-        // 3. Стандартная проверка постоянного токена сотрудника
         const savedToken = localStorage.getItem('wms_secure_token');
+        const statusText = document.getElementById('authStatusText');
+        const statusBar = document.getElementById('secureAuthBar');
+
         if (!savedToken) {
             setViewingMode();
             return;
@@ -416,14 +393,13 @@
             });
             const data = await response.json();
 
-            if (data && data.length > 0) {
+           if (data && data.length > 0) {
                 const employee = data[0];
-                isDemoMode = false;
                 currentPicker = employee.name;
                 pickerStatus = employee.status || "отдыхаю";
-                currentRole = employee.role || "Кладовщик";
+                currentRole = employee.role || "Кладовщик"; // Считываем роль из БД
                 updateAuthUiVisuals();
-                manageChatPolling();
+                manageChatPolling(); // Запуск или остановка опроса чата в зависимости от статуса смены
             } else {
                 localStorage.removeItem('wms_secure_token');
                 setViewingMode();
@@ -431,33 +407,6 @@
         } catch (err) {
             console.error("Ошибка авто-авторизации:", err);
             setViewingMode();
-        }
-    }
-
-    async function tryActivateDemoInvite(inviteCode) {
-        try {
-            const fullQrCode = inviteCode.toLowerCase().startsWith('demo:') ? inviteCode : `demo:${inviteCode}`;
-            const response = await fetch(`${SUPABASE_URL}/rest/v1/allowed_pickers?qr_code=eq.${encodeURIComponent(fullQrCode)}&is_active=eq.true`, {
-                headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}` }
-            });
-            const data = await response.json();
-
-            if (data && data.length > 0) {
-                isDemoMode = true;
-                currentPicker = null; // Важно: null гарантирует скрытие всех кнопок списания!
-                pickerStatus = "отдыхаю";
-                currentRole = "Гость";
-                sessionStorage.setItem('wms_demo_code', fullQrCode);
-                updateAuthUiVisuals();
-                return true;
-            } else {
-                sessionStorage.removeItem('wms_demo_code');
-                alert("❌ Пригласительная ссылка недействительна или срок демонстрации завершен.");
-                return false;
-            }
-        } catch (err) {
-            console.error("Ошибка проверки пригласительного кода:", err);
-            return false;
         }
     }
 
@@ -485,34 +434,25 @@
    }
 
    function setViewingMode() {
-        stopGuestCamera();
-        isDemoMode = false;
         currentPicker = null;
         pickerStatus = "отдыхаю";
         currentRole = "Кладовщик";
-        sessionStorage.removeItem('wms_demo_code');
-
         const statusText = document.getElementById('authStatusText');
         const statusBar = document.getElementById('secureAuthBar');
         const logoutBtn = document.getElementById('logoutBtn');
         const managerBlock = document.getElementById('managerSettingsBlock');
         const pickerHistoryBlock = document.getElementById('pickerHistorySettingsBlock');
-        const lockedScreen = document.getElementById('lockedAccessScreen');
-        const workspace = document.getElementById('authorizedWorkspace');
+        if (pickerHistoryBlock) pickerHistoryBlock.style.display = "none";
         
-        statusText.innerText = "Статус: 🔒 Не авторизован";
-        statusBar.style.backgroundColor = "#ffe5e5";
-        statusText.style.color = "#ff3b30";
+        statusText.innerText = "Режим: 👀 Только просмотр";
+        statusBar.style.backgroundColor = "#e5e5ea";
+        statusText.style.color = "#636366";
         if (logoutBtn) logoutBtn.style.display = "none";
         if (managerBlock) managerBlock.style.display = "none";
-        if (pickerHistoryBlock) pickerHistoryBlock.style.display = "none";
-
-        // Прячем рабочую зону и показываем экран блокировки
-        if (workspace) workspace.style.display = "none";
-        if (lockedScreen) lockedScreen.style.display = "flex";
         
         const linkPcBtn = document.getElementById('linkPcBtn');
         if (linkPcBtn) {
+            // При сбросе в режим просмотра показываем кнопку только на ПК
             const isDesktop = window.innerWidth > 768;
             linkPcBtn.style.display = isDesktop ? "block" : "none";
         }
@@ -521,47 +461,29 @@
    }
 
     function updateAuthUiVisuals() {
-        stopGuestCamera();
         const statusText = document.getElementById('authStatusText');
         const statusBar = document.getElementById('secureAuthBar');
         const managerBlock = document.getElementById('managerSettingsBlock');
-        const pickerHistoryBlock = document.getElementById('pickerHistorySettingsBlock');
         const logoutBtn = document.getElementById('logoutBtn');
         const linkPcBtn = document.getElementById('linkPcBtn');
-        const lockedScreen = document.getElementById('lockedAccessScreen');
-        const workspace = document.getElementById('authorizedWorkspace');
-        const chatTabBtn = document.getElementById('tabChatBtn');
-
-        // Показываем рабочую зону и прячем экран блокировки
-        if (lockedScreen) lockedScreen.style.display = "none";
-        if (workspace) workspace.style.display = "block";
-        if (linkPcBtn) linkPcBtn.style.display = "none";
-
-        // Режим презентации (Гость по пригласительной ссылке)
-        if (isDemoMode) {
-            statusText.innerHTML = `🎭 <strong>Демо-режим</strong> (Только просмотр)`;
-            statusBar.style.backgroundColor = "#eef2ff";
-            statusText.style.color = "#4f46e5";
-            if (logoutBtn) logoutBtn.style.display = "flex";
-            if (chatTabBtn) chatTabBtn.style.display = "none"; // Скрываем внутренний чат от гостя
-            if (managerBlock) managerBlock.style.display = "none";
-            if (pickerHistoryBlock) pickerHistoryBlock.style.display = "none";
-            return;
+        if (linkPcBtn) {
+            // Кнопка покажется только если режим просмотра И это экран ПК (шире 768px)
+            const isDesktop = window.innerWidth > 768;
+            linkPcBtn.style.display = (!currentPicker && isDesktop) ? "block" : "none";
         }
-
-        if (chatTabBtn) chatTabBtn.style.display = "block";
-
         if (managerBlock) {
             if (currentRole === "ЗавСклад") {
                 managerBlock.style.display = "flex";
+                // Восстанавливаем сохраненные состояния галочек из localStorage
                 document.getElementById('managerNotifyToggle').checked = localStorage.getItem('wms_mgr_notify') !== 'false';
                 document.getElementById('managerRestNotifyToggle').checked = localStorage.getItem('wms_mgr_rest_notify') === 'true';
+                // Синхронизируем доступность второй галочки
                 toggleManagerNotifications();
             } else {
                 managerBlock.style.display = "none";
             }
         }
-
+        const pickerHistoryBlock = document.getElementById('pickerHistorySettingsBlock');
         if (pickerHistoryBlock) {
             if (currentPicker && currentRole === "Кладовщик") {
                 pickerHistoryBlock.style.display = "flex";
@@ -575,6 +497,7 @@
         }
 
         if (logoutBtn) {
+            // Кнопка-иконка отображается как flex для правильного центрирования эмодзи двери
             logoutBtn.style.display = currentPicker ? "flex" : "none";
         }
         if (pickerStatus === "работаю") {
@@ -586,6 +509,55 @@
             statusBar.style.backgroundColor = "#f2f2f7";
             statusText.style.color = "#8e8e93";
         }
+    }
+        // ЛОГИКА ДЛЯ КОМПЬЮТЕРА: Генерация QR и ожидание токена от смартфона
+    function startDesktopLinking() {
+        if ("Notification" in window && Notification.permission !== "granted" && Notification.permission !== "denied") {
+            Notification.requestPermission();
+        }
+        const qrCanvasDiv = document.getElementById('pcQrCanvas');
+        const qrContainer = document.getElementById('pcQrContainer');
+        const linkPcBtn = document.getElementById('linkPcBtn');
+        
+        qrCanvasDiv.innerHTML = ""; // Очищаем старый QR
+        qrContainer.style.display = "flex";
+        linkPcBtn.style.display = "none";
+
+        // Генерируем уникальный ID сессии для ПК
+        const sessionId = 'pc_' + Math.random().toString(36).substring(2, 15);
+        const qrPayload = 'linkpc:' + sessionId;
+
+        // Отрисовка QR-кода
+        new QRCode(qrCanvasDiv, {
+            text: qrPayload,
+            width: 128,
+            height: 128,
+            correctLevel: QRCode.CorrectLevel.M
+        });
+
+        // Запускаем опрос Supabase раз в 3 секунды в поисках нашего токена
+        if (pcLinkIntervalId) clearInterval(pcLinkIntervalId);
+        pcLinkIntervalId = setInterval(async () => {
+            try {
+                const response = await fetch(`${SUPABASE_URL}/rest/v1/allowed_pickers?desktop_session_id=eq.${sessionId}&is_active=eq.true`, {
+                    headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}` }
+                });
+                const data = await response.json();
+
+                if (data && data.length > 0) {
+                    const employee = data[0];
+                    if (employee.device_token) {
+                        // Токен найден! Сохраняем его на ПК и перезагружаем сессию
+                        localStorage.setItem('wms_secure_token', employee.device_token);
+                        clearInterval(pcLinkIntervalId);
+                        alert(`Успешно сопряжено! Вход выполнен под учетной записью: ${employee.name}`);
+                        location.reload();
+                    }
+                }
+            } catch (err) {
+                console.error("Ошибка опроса сессии сопряжения:", err);
+            }
+        }, 3000);
     }
 
     function stopDesktopLinking() {
@@ -949,112 +921,6 @@
         } catch (err) {
             alert("Критическая ошибка привязки устройства: " + err.message);
             playErrorBeep();
-        }
-    }
-    // СКАНЕР АКТИВАЦИИ НА ЭКРАНЕ БЛОКИРОВКИ
-    async function toggleGuestScanner() {
-        const videoContainer = document.getElementById('guestVideoContainer');
-        const video = document.getElementById('guestWebcamVideo');
-        const btn = document.getElementById('guestScanBtn');
-        const errBlock = document.getElementById('guestErrorBlock');
-        if (errBlock) errBlock.style.display = 'none';
-
-        if (!guestVideoStream) {
-            try {
-                videoContainer.style.display = 'block';
-                btn.innerText = "🛑 Остановить сканер";
-                btn.style.backgroundColor = "#ff3b30";
-
-                guestVideoStream = await navigator.mediaDevices.getUserMedia({
-                    video: { facingMode: "environment" },
-                    audio: false
-                });
-                video.srcObject = guestVideoStream;
-                await video.play();
-                startGuestQrLoop(video);
-            } catch (err) {
-                if (errBlock) {
-                    errBlock.innerText = "Не удалось включить камеру: " + err.message;
-                    errBlock.style.display = 'block';
-                }
-                playErrorBeep();
-                stopGuestCamera();
-            }
-        } else {
-            stopGuestCamera();
-        }
-    }
-
-    function startGuestQrLoop(video) {
-        const useDetector = window.BarcodeDetector !== undefined;
-        let detector = useDetector ? new BarcodeDetector({ formats: ['qr_code'] }) : null;
-
-        const loop = () => {
-            if (!guestVideoStream) return;
-            if (!video || video.readyState !== video.HAVE_ENOUGH_DATA) {
-                requestAnimationFrame(loop);
-                return;
-            }
-
-            const processCode = async (raw) => {
-                stopGuestCamera();
-                if (raw.toLowerCase().startsWith('login:')) {
-                    await executeSecureLogin(raw);
-                } else if (raw.toLowerCase().startsWith('demo:')) {
-                    await tryActivateDemoInvite(raw);
-                } else {
-                    const errBlock = document.getElementById('guestErrorBlock');
-                    if (errBlock) {
-                        errBlock.innerText = "Этот QR-код не предназначен для входа. Отсканируйте QR сотрудника (login:...) или пригласительный QR.";
-                        errBlock.style.display = 'block';
-                    }
-                    playErrorBeep();
-                }
-            };
-
-            if (detector) {
-                detector.detect(video).then(barcodes => {
-                    if (barcodes.length > 0) {
-                        processCode(barcodes.rawValue.trim());
-                        return;
-                    }
-                    requestAnimationFrame(loop);
-                }).catch(() => {
-                    detector = null;
-                    requestAnimationFrame(loop);
-                });
-                return;
-            }
-
-            const canvas = document.createElement('canvas');
-            canvas.width = video.videoWidth;
-            canvas.height = video.videoHeight;
-            const ctx = canvas.getContext('2d');
-            ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-            const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-            const code = jsQR(imageData.data, canvas.width, canvas.height);
-            if (code) {
-                processCode(code.data.trim());
-                return;
-            }
-            requestAnimationFrame(loop);
-        };
-        loop();
-    }
-
-    function stopGuestCamera() {
-        const videoContainer = document.getElementById('guestVideoContainer');
-        const video = document.getElementById('guestWebcamVideo');
-        const btn = document.getElementById('guestScanBtn');
-        if (guestVideoStream) {
-            guestVideoStream.getTracks().forEach(track => track.stop());
-            guestVideoStream = null;
-        }
-        if (video) video.srcObject = null;
-        if (videoContainer) videoContainer.style.display = 'none';
-        if (btn) {
-            btn.innerText = "📷 Активировать по QR-коду";
-            btn.style.backgroundColor = "#34c759";
         }
     }
 
@@ -2106,27 +1972,14 @@ window.addEventListener('appinstalled', (evt) => {
     }
 });
 
-    // 4. Регистрация Service Worker с автообновлением при выходе новой сборки
-    if ('serviceWorker' in navigator) {
-        window.addEventListener('load', () => {
-            navigator.serviceWorker.register('sw.js')
-                .then(reg => {
-                    console.log('SW зарегистрирован!', reg);
-                    reg.update(); // Принудительно проверяем наличие новой версии sw.js
-                })
-                .catch(err => console.error('Ошибка SW:', err));
-        });
-
-        // Как только новый SW перехватил управление — мягко перезагружаем страницу
-        let refreshing = false;
-        navigator.serviceWorker.addEventListener('controllerchange', () => {
-            if (!refreshing) {
-                refreshing = true;
-                window.location.reload();
-            }
-        });
-    }
-
+// 4. Регистрация Service Worker (обязательно для PWA)
+if ('serviceWorker' in navigator) {
+    window.addEventListener('load', () => {
+        navigator.serviceWorker.register('sw.js')
+            .then(reg => console.log('SW зарегистрирован!', reg))
+            .catch(err => console.error('Ошибка SW:', err));
+    });
+}
 </script>
 </body>
 </html>
