@@ -139,6 +139,16 @@
             <div class="analogs-title">Также этот товар лежит в ячейках:</div>
             <div id="analogsList"></div>
         </div>
+        <!-- ЗАЯВКИ НА СНЯТИЕ С ВЫСОТЫ (ДЛЯ КАРЩИКА И ЗАВСКЛАДА) -->
+        <div id="reachTasksSection" style="display: none; margin-top: 20px; padding: 12px; background: #fffbeb; border: 1px solid #fcd34d; border-left: 5px solid #f59e0b; border-radius: 8px; width: 100%;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+                <div style="font-size: 13px; font-weight: bold; color: #b45309; text-transform: uppercase; letter-spacing: 0.5px;">
+                    🏗️ Заявки на снятие (<span id="reachTasksCount">0</span>):
+                </div>
+                <button onclick="loadReachTasks()" title="Обновить заявки" style="background: #fef3c7; border: 1px solid #fcd34d; border-radius: 6px; padding: 4px 8px; font-size: 12px; cursor: pointer; color: #92400e;">🔄</button>
+            </div>
+            <div id="reachTasksList" style="display: flex; flex-direction: column; gap: 8px;"></div>
+        </div>
 
         <!-- МОИ АКТИВНЫЕ ОТБОРЫ (ОЖИДАЮТ ОПЕРАТОРА) -->
         <div id="myActiveClaimsSection" style="display: none; margin-top: 22px; padding-top: 15px; border-top: 2px dashed #e5e5ea; width: 100%;">
@@ -207,7 +217,19 @@
 
     </div> <!-- Конец #authorizedWorkspace -->
 
-    <div class="version-tag">сборка: 1.6.6 (Order Cancel, number_row Sync & Locked Analog Badge)</div>
+<div class="version-tag">сборка: 1.7.0 (Reach Truck Role, High-Tier Delegation & Cancel Alerts)</div>
+</div>
+<!-- МОДАЛЬНОЕ ОКНО ВЫБОРА СПОСОБА ОТБОРА С 2+ ЯРУСА -->
+<div id="reachChoiceModal" style="display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.55); z-index: 9999; align-items: center; justify-content: center; padding: 15px;">
+    <div style="background: white; width: 100%; max-width: 380px; border-radius: 12px; padding: 18px; box-shadow: 0 10px 25px rgba(0,0,0,0.2);">
+        <div style="font-size: 16px; font-weight: bold; color: #1c1c1e; margin-bottom: 8px; text-align: center;">🏗️ Высотный ярус</div>
+        <div id="reachChoiceText" style="font-size: 13px; color: #3a3a3c; line-height: 1.4; margin-bottom: 16px; text-align: center;"></div>
+        <div style="display: flex; flex-direction: column; gap: 8px;">
+            <button id="btnDelegateReach" style="padding: 12px; background: #f59e0b; color: white; border: none; border-radius: 8px; font-weight: bold; font-size: 14px; cursor: pointer;">🏗️ Передать запрос карщику</button>
+            <button id="btnSelfPick" style="padding: 12px; background: #5856d6; color: white; border: none; border-radius: 8px; font-weight: bold; font-size: 14px; cursor: pointer;">💪 Заберу сам (под мою ответственность)</button>
+            <button id="btnCancelReachModal" style="padding: 10px; background: #e5e5ea; color: #3a3a3c; border: none; border-radius: 8px; font-weight: 600; font-size: 13px; cursor: pointer;">Отмена</button>
+        </div>
+    </div>
 </div>
 
 <script>
@@ -525,6 +547,9 @@
         const myClaimsSection = document.getElementById('myActiveClaimsSection');
         if (myClaimsSection) myClaimsSection.style.display = 'none';
 
+        const reachSection = document.getElementById('reachTasksSection');
+        if (reachSection) reachSection.style.display = 'none';
+
         stopDesktopLinking();
         clearSearchResults();
     }
@@ -570,7 +595,7 @@
         }
 
         if (pickerHistoryBlock) {
-            if (currentPicker && currentRole === "Кладовщик") {
+if (currentPicker && (currentRole === "Кладовщик" || currentRole === "Карщик")) {
                 pickerHistoryBlock.style.display = "flex";
                 const ownToggle = document.getElementById('pickerOwnClaimsToggle');
                 if (ownToggle) {
@@ -595,6 +620,7 @@
         }
 
         loadMyActiveClaims();
+	loadReachTasks();
     }
 
         // ЛОГИКА ДЛЯ КОМПЬЮТЕРА: Генерация QR и ожидание токена от смартфона
@@ -1696,6 +1722,41 @@
         hintBlock.innerText = text;
         hintBlock.style.display = 'block';
     }
+    // ПРОВЕРКА ВЫСОТНОГО ЯРУСА (Длиннее 3 символов и последний символ > 1)
+    function isHighTierAddress(address) {
+        if (!address) return false;
+        const clean = String(address).trim();
+        if (clean.length <= 3) return false; // Зоны (ЗП и т.д.) — не высотные
+        const lastChar = clean.slice(-1);
+        const tierNum = parseInt(lastChar, 10);
+        return !isNaN(tierNum) && tierNum > 1;
+    }
+
+    // МОДАЛЬНОЕ ОКНО ВЫБОРА: САМ ИЛИ КАРЩИК
+    function askReachTruckDelegation(address, title, claimQty, unit) {
+        return new Promise((resolve) => {
+            const modal = document.getElementById('reachChoiceModal');
+            const textEl = document.getElementById('reachChoiceText');
+            const btnDelegate = document.getElementById('btnDelegateReach');
+            const btnSelf = document.getElementById('btnSelfPick');
+            const btnCancel = document.getElementById('btnCancelReachModal');
+
+            textEl.innerHTML = `Ячейка <strong>${escapeHtml(address)}</strong> находится выше 1-го яруса.<br>Товар: <strong>${escapeHtml(title)}</strong> (${claimQty} ${escapeHtml(unit)}).<br><br>Как выполнить отбор?`;
+            modal.style.display = 'flex';
+
+            const cleanup = (result) => {
+                modal.style.display = 'none';
+                btnDelegate.onclick = null;
+                btnSelf.onclick = null;
+                btnCancel.onclick = null;
+                resolve(result);
+            };
+
+            btnDelegate.onclick = () => cleanup('delegate');
+            btnSelf.onclick = () => cleanup('self');
+            btnCancel.onclick = () => cleanup('cancel');
+        });
+    }
 
     function executeClaimAction(btnElement, rowId, sku, title, address, purpose, unit, batch, productionDate, qualityStatus = '', numberRow = null) {
         if (isClaimProcessing) return;
@@ -1705,6 +1766,7 @@
 
     // ГЛАВНАЯ ФУНКЦИЯ СОЗДАНИЯ ЗАЯВКИ НА СПИСАНИЕ (С ЗАЩИТОЙ ОТ ДВОЙНОГО НАЖАТИЯ И ПРОВЕРКОЙ КАРАНТИН/БРАК)
     // ГЛАВНАЯ ФУНКЦИЯ СОЗДАНИЯ ЗАЯВКИ НА СПИСАНИЕ (С ПРОВЕРКОЙ АКТУАЛЬНОГО ОСТАТКА, ЧАСТИЧНЫМ ОТБОРОМ И NUMBER_ROW)
+    // ГЛАВНАЯ ФУНКЦИЯ СОЗДАНИЯ ЗАЯВКИ НА СПИСАНИЕ (С УЧЕТОМ ВЫСОТНЫХ ЯРУСОВ И РОЛИ КАРЩИКА)
     async function createOrderClaim(btnElement, rowId, sku, title, address, purpose, unit, batch, productionDate, qualityStatus = '', numberRow = null) {
         if (isClaimProcessing) return;
 
@@ -1747,8 +1809,18 @@
             }
         }
 
-        if (!confirm(`Вы действительно хотите взять в работу товар из ячейки ${address} в количестве ${claimQty} ${unit}?`)) {
-            return;
+        // Определяем: нужно ли предложить привлечь карщика
+        let isDelegatedToReach = false;
+        const needReachOffer = (currentRole === "Кладовщик") && isHighTierAddress(address);
+
+        if (needReachOffer) {
+            const choice = await askReachTruckDelegation(address, title, claimQty, unit);
+            if (choice === 'cancel') return;
+            isDelegatedToReach = (choice === 'delegate');
+        } else {
+            if (!confirm(`Вы действительно хотите взять в работу товар из ячейки ${address} в количестве ${claimQty} ${unit}?`)) {
+                return;
+            }
         }
 
         isClaimProcessing = true;
@@ -1792,7 +1864,7 @@
                 ? { quantity: newQty } 
                 : { quantity: 0, status: 'locked' };
 
-            // ЭТАП 1: Обновляем остаток в таблице test_products (и блокируем только при 0)
+            // ЭТАП 1: Обновляем остаток в таблице test_products
             const responseUpdateStock = await fetch(`${SUPABASE_URL}/rest/v1/test_products?id=eq.${rowId}`, {
                 method: 'PATCH',
                 headers: {
@@ -1806,7 +1878,9 @@
 
             if (!responseUpdateStock.ok) throw new Error(`Не удалось обновить остаток палеты.`);
 
-            // ЭТАП 2: Создаем запись в order_claims
+            // ЭТАП 2: Создаем запись в order_claims ('wait_reach' если передали карщику, иначе 'new')
+            const claimStatus = isDelegatedToReach ? 'wait_reach' : 'new';
+
             const responseClaim = await fetch(`${SUPABASE_URL}/rest/v1/order_claims`, {
                 method: 'POST',
                 headers: {
@@ -1826,7 +1900,7 @@
                     batch: batch,
                     production_date: productionDate || null,
                     number_row: numberRow,
-                    status: 'new'
+                    status: claimStatus
                 })
             });
 
@@ -1834,7 +1908,12 @@
 
             const qualityPrefix = qualityStatus ? `[${qualityStatus.toUpperCase()}] ` : '';
 
-            // ЭТАП 2.5: Отправляем системное уведомление в чат для Операторов и Начальников
+            // ЭТАП 2.5: Отправляем системное уведомление в чат
+            const msgTargetRole = isDelegatedToReach ? 'Запрос карщику' : 'Операторы и Руководство';
+            const msgText = isDelegatedToReach
+                ? `🏗️ ${qualityPrefix}Кладовщик ${currentPicker} просит снять с высоты: "${title}" (${claimQty} ${unit}) из ячейки ${address}.`
+                : `📥 ${qualityPrefix}${currentRole} ${currentPicker} взял в работу товар "${title}" (${claimQty} ${unit}) из ячейки ${address}.`;
+
             await fetch(`${SUPABASE_URL}/rest/v1/wms_messages`, {
                 method: 'POST',
                 headers: {
@@ -1844,16 +1923,22 @@
                     'Prefer': 'return=minimal'
                 },
                 body: JSON.stringify({
-                    target_role: 'Операторы и Руководство',
-                    text: `📥 ${qualityPrefix}Кладовщик ${currentPicker} взял в работу товар "${title}" (${claimQty} ${unit}) из ячейки ${address}.`,
+                    target_role: msgTargetRole,
+                    text: msgText,
                     trigger_by: currentPicker,
                     address: address
                 })
             });
 
             const leftInfo = newQty > 0 ? `\nВ ячейке осталось: ${newQty} ${unit}.` : `\nЯчейка полностью выбрана и заблокирована.`;
-            alert(`✅ Товар успешно взят в работу вами (${currentPicker}).${leftInfo}`);
+            if (isDelegatedToReach) {
+                alert(`🏗️ Запрос на снятие из ячейки ${address} отправлен карщику!${leftInfo}`);
+            } else {
+                alert(`✅ Товар успешно взят в работу вами (${currentPicker}).${leftInfo}`);
+            }
+
             await loadMyActiveClaims();
+            if (typeof loadReachTasks === 'function') await loadReachTasks();
             searchAddress();
 
         } catch (error) {
@@ -1867,8 +1952,172 @@
             isClaimProcessing = false;
         }
     }
+    // ЗАГРУЗКА ЗАЯВОК НА СНЯТИЕ С ВЫСОТЫ (ДЛЯ РОЛЕЙ 'Карщик' И 'ЗавСклад')
+    async function loadReachTasks() {
+        const section = document.getElementById('reachTasksSection');
+        const listContainer = document.getElementById('reachTasksList');
+        const countEl = document.getElementById('reachTasksCount');
+        if (!section || !listContainer) return;
+
+        if (!currentPicker || isDemoMode || (currentRole !== 'Карщик' && currentRole !== 'ЗавСклад')) {
+            section.style.display = 'none';
+            listContainer.innerHTML = '';
+            return;
+        }
+
+        try {
+            const response = await fetch(`${SUPABASE_URL}/rest/v1/order_claims?status=eq.wait_reach&order=id.asc`, {
+                headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}` }
+            });
+            if (!response.ok) return;
+
+            const tasks = await response.json();
+            if (!tasks || tasks.length === 0) {
+                section.style.display = 'none';
+                listContainer.innerHTML = '';
+                if (countEl) countEl.innerText = '0';
+                return;
+            }
+
+            if (countEl) countEl.innerText = tasks.length;
+            listContainer.innerHTML = '';
+
+            const isResting = (pickerStatus === "отдыхаю");
+            const btnDisabledAttr = isResting ? "disabled" : "";
+            const btnBg = isResting ? "#aeaeae" : "#16a34a";
+            const btnCursor = isResting ? "not-allowed" : "pointer";
+
+            tasks.forEach(task => {
+                const unitStr = task.unit || 'шт.';
+                const timeStr = task.created_at 
+                    ? new Date(task.created_at).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' }) 
+                    : '';
+                const skuBadge = task.sku ? `<span class="sku-badge" style="font-size:11px; padding:1px 5px;">${escapeHtml(task.sku)}</span>` : '';
+
+                listContainer.innerHTML += `
+                    <div style="background: #ffffff; border: 1px solid #fcd34d; border-left: 4px solid #f59e0b; border-radius: 8px; padding: 10px; font-size: 13px;">
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+                            <span style="font-weight: bold; color: #1c1c1e;">📍 Ячейка: <span style="color:#d97706; font-size:15px;">${escapeHtml(task.address)}</span> ${skuBadge}</span>
+                            <span style="font-size: 11px; color: #8e8e93;">⏱️ ${timeStr}</span>
+                        </div>
+                        <div style="font-size: 12px; color: #b45309; font-weight: 600; margin-bottom: 4px;">
+                            🙋 Запросил: ${escapeHtml(task.picker_name)}
+                        </div>
+                        <div style="color: #2c3e50; font-weight: 500; margin-bottom: 6px; line-height: 1.3;">${escapeHtml(task.title)}</div>
+                        <div style="display: flex; justify-content: space-between; align-items: center; gap: 8px; border-top: 1px dashed #fde68a; padding-top: 6px;">
+                            <span style="font-weight: bold; color: #1c1c1e;">Снять: ${task.quantity} ${escapeHtml(unitStr)}</span>
+                            <button onclick="confirmReachTask(this, ${task.id}, '${escapeHtml(task.picker_name)}', '${escapeHtml(task.address)}', '${escapeHtml(task.title)}', ${task.quantity}, '${escapeHtml(unitStr)}')" 
+                                    style="padding: 7px 12px; background: ${btnBg}; color: white; border: none; border-radius: 6px; font-size: 12px; font-weight: bold; cursor: ${btnCursor};" ${btnDisabledAttr}>
+                                ✅ ВЗЯЛ / СНЯЛ
+                            </button>
+                        </div>
+                        ${isResting ? '<div style="color:#ff3b30; font-size:10px; font-weight:bold; margin-top:4px;">Откройте смену на двери, чтобы подтверждать снятие</div>' : ''}
+                    </div>`;
+            });
+
+            section.style.display = 'block';
+        } catch (err) {
+            console.error("Ошибка загрузки заявок на снятие:", err);
+        }
+    }
+    // ПОДТВЕРЖДЕНИЕ СНЯТИЯ КАРЩИКОМ (ПЕРЕВОД В 'new' С ФОРМАТОМ 'Вова-Аваз')
+    async function confirmReachTask(btnElement, claimId, requesterName, address, title, claimQty, unit) {
+        if (isClaimProcessing) return;
+
+        if (!currentPicker || (currentRole !== 'Карщик' && currentRole !== 'ЗавСклад')) {
+            alert("Ошибка: Подтвердить снятие может только Карщик или ЗавСклад.");
+            playErrorBeep();
+            return;
+        }
+        if (pickerStatus === "отдыхаю") {
+            alert("Ошибка: Вы не на смене ('ОТДЫХАЮ')! Отметьте приход на двери.");
+            playErrorBeep();
+            return;
+        }
+
+        if (!confirm(`Подтвердить снятие товара "${title}" (${claimQty} ${unit}) из ячейки ${address} для ${requesterName}?`)) {
+            return;
+        }
+
+        isClaimProcessing = true;
+        const origText = btnElement ? btnElement.innerText : '';
+        if (btnElement) {
+            btnElement.disabled = true;
+            btnElement.innerText = '⏳...';
+        }
+
+        try {
+            // Защита от гонки: проверяем, не снял ли уже другой карщик / ЗавСклад
+            const checkRes = await fetch(`${SUPABASE_URL}/rest/v1/order_claims?id=eq.${claimId}&select=id,status,picker_name`, {
+                headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}` }
+            });
+            if (!checkRes.ok) throw new Error("Не удалось проверить статус заявки.");
+
+            const rows = await checkRes.json();
+            if (!rows || rows.length === 0 || rows[0].status !== 'wait_reach') {
+                alert("⚠️ Эта заявка уже выполнена другим сотрудником или отменена заказчиком!");
+                playErrorBeep();
+                await loadReachTasks();
+                return;
+            }
+
+            const combinedPickerName = `${requesterName}-${currentPicker}`;
+
+            // Обновляем заявку: status -> 'new', picker_name -> 'Вова-Аваз'
+            const patchRes = await fetch(`${SUPABASE_URL}/rest/v1/order_claims?id=eq.${claimId}`, {
+                method: 'PATCH',
+                headers: {
+                    'apikey': SUPABASE_KEY,
+                    'Authorization': `Bearer ${SUPABASE_KEY}`,
+                    'Content-Type': 'application/json',
+                    'Prefer': 'return=minimal'
+                },
+                body: JSON.stringify({
+                    status: 'new',
+                    picker_name: combinedPickerName
+                })
+            });
+
+            if (!patchRes.ok) throw new Error("Не удалось обновить статус заявки в базе.");
+
+            // Отправляем сообщение в чат (видит Оператор, ЗавСклад, сам Карщик и инициатор)
+            await fetch(`${SUPABASE_URL}/rest/v1/wms_messages`, {
+                method: 'POST',
+                headers: {
+                    'apikey': SUPABASE_KEY,
+                    'Authorization': `Bearer ${SUPABASE_KEY}`,
+                    'Content-Type': 'application/json',
+                    'Prefer': 'return=minimal'
+                },
+                body: JSON.stringify({
+                    target_role: 'Снятие выполнено',
+                    text: `✅ ${currentRole} ${currentPicker} снял для ${requesterName}: "${title}" (${claimQty} ${unit}) из ячейки ${address}.`,
+                    trigger_by: currentPicker,
+                    address: address
+                })
+            });
+
+            triggerVibration(100);
+            alert(`✅ Снятие подтверждено! Заявка (${combinedPickerName}) сформирована для оператора.`);
+            await loadReachTasks();
+            await loadMyActiveClaims();
+
+        } catch (err) {
+            alert(`❌ Ошибка при подтверждении снятия: ${err.message}`);
+            playErrorBeep();
+            if (btnElement) {
+                btnElement.disabled = false;
+                btnElement.innerText = origText;
+            }
+        } finally {
+            isClaimProcessing = false;
+        }
+    }
 
     // ЗАГРУЗКА НЕОБРАБОТАННЫХ ЗАЯВОК ТЕКУЩЕГО СОТРУДНИКА (status = 'new')
+    // ЗАГРУЗКА АКТИВНЫХ ОТБОРОВ ТЕКУЩЕГО СОТРУДНИКА
+    // - Заказчик видит свои 'wait_reach' (может отменить, пока карщик не снял) и свои 'new' (может отменить, если брал сам)
+    // - Карщик видит снятые им 'new' (picker_name заканчивается на '-ИмяКарщика') и только он может их отменить до выгрузки оператором
     async function loadMyActiveClaims() {
         const section = document.getElementById('myActiveClaimsSection');
         const listContainer = document.getElementById('myActiveClaimsList');
@@ -1881,35 +2130,57 @@
         }
 
         try {
-            const response = await fetch(`${SUPABASE_URL}/rest/v1/order_claims?picker_name=eq.${encodeURIComponent(currentPicker)}&status=eq.new&order=id.desc`, {
+            // Запрашиваем активные заявки ('new' и 'wait_reach') и фильтруем для текущего пользователя
+            const response = await fetch(`${SUPABASE_URL}/rest/v1/order_claims?status=in.(new,wait_reach)&order=id.desc`, {
                 headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}` }
             });
             if (!response.ok) return;
 
-            const claims = await response.json();
-            if (!claims || claims.length === 0) {
+            const allActive = await response.json();
+            const myClaims = (allActive || []).filter(claim => {
+                const pName = (claim.picker_name || '').trim();
+                // 1. Точное совпадение (сам заказывал / сам брал)
+                if (pName === currentPicker) return true;
+                // 2. Составное имя 'Заказчик-Карщик' (например, 'Вова-Аваз')
+                if (pName.endsWith(`-${currentPicker}`)) return true;
+                return false;
+            });
+
+            if (myClaims.length === 0) {
                 section.style.display = 'none';
                 listContainer.innerHTML = '';
                 return;
             }
 
             listContainer.innerHTML = '';
-            claims.forEach(claim => {
+            myClaims.forEach(claim => {
                 const unitStr = claim.unit || 'шт.';
                 const timeStr = claim.created_at 
                     ? new Date(claim.created_at).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' }) 
                     : '';
                 const skuBadge = claim.sku ? `<span class="sku-badge" style="font-size:11px; padding:1px 5px;">${escapeHtml(claim.sku)}</span>` : '';
+                const isWaitReach = (claim.status === 'wait_reach');
+                const isReachCompleted = (claim.status === 'new' && claim.picker_name.includes('-'));
+
+                const statusBadge = isWaitReach
+                    ? `<span style="background:#fef3c7; color:#b45309; padding:2px 6px; border-radius:4px; font-size:11px; font-weight:bold;">⏳ Ожидает карщика</span>`
+                    : (isReachCompleted
+                        ? `<span style="background:#dcfce7; color:#15803d; padding:2px 6px; border-radius:4px; font-size:11px; font-weight:bold;">🏗️ Снято для: ${escapeHtml(claim.picker_name.split('-')[0])}</span>`
+                        : '');
+
+                const cardBorderColor = isWaitReach ? '#f59e0b' : '#5856d6';
+                const cardBgColor = isWaitReach ? '#fffbeb' : '#f5f3ff';
 
                 listContainer.innerHTML += `
-                    <div style="background: #f5f3ff; border: 1px solid #ddd6fe; border-left: 4px solid #5856d6; border-radius: 8px; padding: 10px; font-size: 13px;">
-                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
-                            <span style="font-weight: bold; color: #1c1c1e;">📍 Ячейка: <span style="color:#5856d6;">${escapeHtml(claim.address)}</span> ${skuBadge}</span>
+                    <div style="background: ${cardBgColor}; border: 1px solid #ddd6fe; border-left: 4px solid ${cardBorderColor}; border-radius: 8px; padding: 10px; font-size: 13px;">
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px; gap: 4px; flex-wrap: wrap;">
+                            <span style="font-weight: bold; color: #1c1c1e;">📍 Ячейка: <span style="color:${cardBorderColor};">${escapeHtml(claim.address)}</span> ${skuBadge}</span>
                             <span style="font-size: 11px; color: #8e8e93;">⏱️ ${timeStr}</span>
                         </div>
+                        ${statusBadge ? `<div style="margin-bottom: 5px;">${statusBadge}</div>` : ''}
                         <div style="color: #2c3e50; font-weight: 500; margin-bottom: 6px; line-height: 1.3;">${escapeHtml(claim.title)}</div>
                         <div style="display: flex; justify-content: space-between; align-items: center; gap: 8px; border-top: 1px dashed #ddd6fe; padding-top: 6px;">
-                            <span style="font-weight: bold; color: #5856d6;">Взято: ${claim.quantity} ${escapeHtml(unitStr)}</span>
+                            <span style="font-weight: bold; color: ${cardBorderColor};">Взято: ${claim.quantity} ${escapeHtml(unitStr)}</span>
                             <button onclick="cancelOrderClaim(this, ${claim.id}, ${claim.number_row ?? 'null'}, '${escapeHtml(claim.address)}', '${escapeHtml(claim.title)}', ${claim.quantity}, '${escapeHtml(unitStr)}', '${escapeHtml(claim.batch || '')}')" 
                                     style="padding: 6px 10px; background: #ff3b30; color: white; border: none; border-radius: 6px; font-size: 12px; font-weight: bold; cursor: pointer;">
                                 ↩️ Отменить
@@ -1925,6 +2196,7 @@
     }
 
     // ОТМЕНА ОШИБОЧНОЙ ЗАЯВКИ КЛАДОВЩИКОМ (С ПРОВЕРКОЙ СТАТУСА 'new' И ВОЗВРАТОМ ОСТАТКА)
+    // ОТМЕНА ЗАЯВКИ (С РАЗГРАНИЧЕНИЕМ ПРАВ И ПРИНУДИТЕЛЬНЫМ ЗВУКОВЫМ ОПОВЕЩЕНИЕМ ИНИЦИАТОРА)
     async function cancelOrderClaim(btnElement, claimId, numberRow, address, title, claimQty, unit, batch) {
         if (isClaimProcessing) return;
 
@@ -1951,21 +2223,54 @@
         }
 
         try {
-            // ШАГ 1: Проверяем, не забрал ли уже эту заявку оператор (status === 'new')
-            const checkClaimRes = await fetch(`${SUPABASE_URL}/rest/v1/order_claims?id=eq.${claimId}&select=id,status`, {
+            // ШАГ 1: Проверяем актуальный статус и исполнителя заявки в БД
+            const checkClaimRes = await fetch(`${SUPABASE_URL}/rest/v1/order_claims?id=eq.${claimId}&select=id,status,picker_name`, {
                 headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}` }
             });
             if (!checkClaimRes.ok) throw new Error("Не удалось проверить статус заявки в базе.");
 
             const claimRows = await checkClaimRes.json();
-            if (!claimRows || claimRows.length === 0 || claimRows[0].status !== 'new') {
-                alert("❌ Оператор уже загрузил эту заявку в основную базу (или она уже отменена)! Обратитесь к оператору для ручной корректировки.");
+            if (!claimRows || claimRows.length === 0) {
+                alert("❌ Заявка не найдена в базе.");
                 playErrorBeep();
                 await loadMyActiveClaims();
                 return;
             }
 
-            // ШАГ 2: Ищем исходную строку в test_products (сначала по number_row, при отсутствии — по address + title)
+            const dbClaim = claimRows[0];
+            if (dbClaim.status !== 'new' && dbClaim.status !== 'wait_reach') {
+                alert("❌ Оператор уже загрузил эту заявку в основную базу (или она уже отменена)! Обратитесь к оператору для ручной корректировки.");
+                playErrorBeep();
+                await loadMyActiveClaims();
+                if (typeof loadReachTasks === 'function') await loadReachTasks();
+                return;
+            }
+
+            const dbPickerName = (dbClaim.picker_name || '').trim();
+            const isCombinedName = dbPickerName.includes('-');
+            let requesterName = dbPickerName;
+            let reachOperatorName = null;
+
+            if (isCombinedName) {
+                const parts = dbPickerName.split('-');
+                requesterName = parts[0];
+                reachOperatorName = parts.slice(1).join('-');
+
+                // После снятия ('new' с именем 'Вова-Аваз') отменить может ТОЛЬКО тот, кто снял
+                if (reachOperatorName !== currentPicker) {
+                    alert(`❌ Карщик ${reachOperatorName} уже снял этот палет! Отменить заявку теперь может только ${reachOperatorName}.`);
+                    playErrorBeep();
+                    await loadMyActiveClaims();
+                    return;
+                }
+            } else if (dbPickerName !== currentPicker) {
+                alert("❌ Вы не можете отменить чужую заявку.");
+                playErrorBeep();
+                await loadMyActiveClaims();
+                return;
+            }
+
+            // ШАГ 2: Ищем исходную строку в test_products и возвращаем остаток
             let productRow = null;
             if (numberRow !== null && numberRow !== undefined && !isNaN(Number(numberRow))) {
                 const byRowRes = await fetch(`${SUPABASE_URL}/rest/v1/test_products?number_row=eq.${Number(numberRow)}&address=eq.${encodeURIComponent(address)}&select=id,quantity,status`, {
@@ -1978,7 +2283,7 @@
             }
 
             if (!productRow) {
-                let fallbackUrl = `${SUPABASE_URL}/rest/v1/test_products?address=eq.${encodeURIComponent(address)}&title=eq.${encodeURIComponent(title)}&select=id,quantity,status,batch`;
+                const fallbackUrl = `${SUPABASE_URL}/rest/v1/test_products?address=eq.${encodeURIComponent(address)}&title=eq.${encodeURIComponent(title)}&select=id,quantity,status,batch`;
                 const fallbackRes = await fetch(fallbackUrl, {
                     headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}` }
                 });
@@ -1990,7 +2295,6 @@
                 }
             }
 
-            // Возвращаем остаток и снимаем блокировку, если строка найдена в текущем слепке
             if (productRow) {
                 const currentStockQty = productRow.quantity !== null ? parseInt(productRow.quantity, 10) : 0;
                 const restoredQty = currentStockQty + parseInt(claimQty, 10);
@@ -2024,7 +2328,20 @@
             });
             if (!cancelRes.ok) throw new Error("Не удалось обновить статус заявки на canceled.");
 
-            // ШАГ 4: Отправляем уведомление об отмене в чат (видит Оператор, ЗавСклад и сам Кладовщик при включенной галочке)
+            // ШАГ 4: Отправляем уведомление об отмене в чат
+            let msgTargetRole = 'Операторы и Руководство';
+            let msgText = `↩️ ${currentRole} ${currentPicker} ОТМЕНИЛ отбор товара "${title}" (${claimQty} ${unit}) из ячейки ${address}. Остаток возвращен.`;
+
+            if (dbClaim.status === 'wait_reach') {
+                // Кладовщик сам отменил запрос до того, как карщик снял
+                msgTargetRole = 'Отмена запроса карщику';
+                msgText = `↩️ Кладовщик ${currentPicker} ОТМЕНИЛ запрос на снятие товара "${title}" (${claimQty} ${unit}) из ячейки ${address}.`;
+            } else if (isCombinedName && requesterName !== currentPicker) {
+                // Карщик отменил уже снятую заявку — шлем персональный маркер для звукового уведомления Вовы
+                msgTargetRole = `Отмена для:${requesterName}`;
+                msgText = `⚠️ ВНИМАНИЕ ${requesterName}! ${currentRole} ${currentPicker} ОТМЕНИЛ снятие товара "${title}" (${claimQty} ${unit}) из ячейки ${address}. Остаток возвращен в ячейку.`;
+            }
+
             await fetch(`${SUPABASE_URL}/rest/v1/wms_messages`, {
                 method: 'POST',
                 headers: {
@@ -2034,8 +2351,8 @@
                     'Prefer': 'return=minimal'
                 },
                 body: JSON.stringify({
-                    target_role: 'Операторы и Руководство',
-                    text: `↩️ Кладовщик ${currentPicker} ОТМЕНИЛ отбор товара "${title}" (${claimQty} ${unit}) из ячейки ${address}. Остаток возвращен.`,
+                    target_role: msgTargetRole,
+                    text: msgText,
                     trigger_by: currentPicker,
                     address: address
                 })
@@ -2044,6 +2361,7 @@
             triggerVibration(80);
             alert(`↩️ Заявка отменена! Товар (${claimQty} ${unit}) возвращен в ячейку ${address}.`);
             await loadMyActiveClaims();
+            if (typeof loadReachTasks === 'function') await loadReachTasks();
 
             const currentInput = document.getElementById('addressInput').value.trim();
             if (currentInput) {
@@ -2121,9 +2439,15 @@
     }
 
     // ПОЛУЧЕНИЕ СООБЩЕНИЙ ИЗ SUPABASE С УЧЕТОМ РОЛИ
+    // ПОЛУЧЕНИЕ СООБЩЕНИЙ ИЗ SUPABASE С УЧЕТОМ РОЛИ (ВКЛЮЧАЯ 'Карщик' И ПЕРСОНАЛЬНЫЕ ОТМЕНЫ)
     async function fetchNewMessages() {
         const wantsRestNotify = (currentRole === "ЗавСклад" && localStorage.getItem('wms_mgr_rest_notify') === 'true' && localStorage.getItem('wms_mgr_notify') !== 'false');
         if (!currentPicker || (pickerStatus !== "работаю" && !wantsRestNotify)) return;
+
+        // Автообновление плашки заявок на снятие для Карщика и ЗавСклада
+        if ((currentRole === 'Карщик' || currentRole === 'ЗавСклад') && typeof loadReachTasks === 'function') {
+            loadReachTasks();
+        }
 
         try {
             var timeLimit = getChatTimeLimitIso();
@@ -2140,19 +2464,47 @@
             var showOwnClaims = localStorage.getItem('wms_picker_own_claims') === 'true';
 
             var filtered = messages.filter(function(msg) {
-                if (currentRole === 'Кладовщик') {
-                    if (msg.target_role === 'all') return true;
-                    if (showOwnClaims && msg.trigger_by === currentPicker) return true;
-                    return false;
+                const tRole = msg.target_role || '';
+
+                // Персональное экстренное уведомление об отмене карщиком (видит адресат, Оператор и ЗавСклад)
+                if (tRole.startsWith('Отмена для:')) {
+                    const targetUser = tRole.split(':').slice(1).join(':').trim();
+                    if (targetUser === currentPicker) return true;
+                    if (currentRole === 'Оператор') return true;
+                    if (currentRole === 'ЗавСклад') {
+                        var mgrNotify = document.getElementById('managerNotifyToggle') ? document.getElementById('managerNotifyToggle').checked : true;
+                        return mgrNotify;
+                    }
+                    return showOwnClaims && msg.trigger_by === currentPicker;
                 }
-                if (currentRole === 'Оператор') {
-                    return msg.target_role === 'all' || msg.target_role === 'Операторы и Руководство';
-                }
-                if (currentRole === 'ЗавСклад') {
-                    var isNotifyEnabled = document.getElementById('managerNotifyToggle') ? document.getElementById('managerNotifyToggle').checked : true;
-                    if (!isNotifyEnabled && msg.target_role === 'Операторы и Руководство') return false;
+
+                // Свои собственные действия (если включена галочка в настройках)
+                if (showOwnClaims && msg.trigger_by === currentPicker) {
                     return true;
                 }
+
+                if (currentRole === 'Кладовщик') {
+                    return tRole === 'all';
+                }
+
+                if (currentRole === 'Карщик') {
+                    return tRole === 'all' || tRole === 'Запрос карщику' || tRole === 'Отмена запроса карщику';
+                }
+
+                if (currentRole === 'Оператор') {
+                    return tRole === 'all' ||
+                           tRole === 'Операторы и Руководство' ||
+                           tRole === 'Запрос карщику' ||
+                           tRole === 'Снятие выполнено' ||
+                           tRole === 'Отмена запроса карщику';
+                }
+
+                if (currentRole === 'ЗавСклад') {
+                    var isNotifyEnabled = document.getElementById('managerNotifyToggle') ? document.getElementById('managerNotifyToggle').checked : true;
+                    if (!isNotifyEnabled && tRole !== 'all') return false;
+                    return true;
+                }
+
                 return false;
             });
 
@@ -2162,6 +2514,7 @@
         }
     }
 
+    // ОТРИСОВКА ЛЕНТЫ СООБЩЕНИЙ И ОБНОВЛЕНИЕ ШИЛЬДИКА
     // ОТРИСОВКА ЛЕНТЫ СООБЩЕНИЙ И ОБНОВЛЕНИЕ ШИЛЬДИКА
     function renderChatMessages(messages) {
         var container = document.getElementById('chatMessagesContainer');
@@ -2174,19 +2527,19 @@
             return;
         }
 
-        // Считаем непрочитанными ТОЛЬКО чужие сообщения (свои отборы не должны пищать и накручивать счетчик)
+        // Непрочитанные чужие сообщения
         var foreignUnread = messages.filter(function(m) {
             return m.id > lastSeenMessageId && m.trigger_by !== currentPicker;
         });
 
-        // Если появились новые собственные сообщения, тихо сдвигаем lastSeenMessageId
+        // Сдвигаем счетчик, если пришли только собственные записи
         var maxIdInList = Math.max.apply(Math, messages.map(function(m) { return m.id; }));
         if (foreignUnread.length === 0 && maxIdInList > lastSeenMessageId) {
             lastSeenMessageId = maxIdInList;
             localStorage.setItem('wms_last_msg_id', maxIdInList);
         }
 
-        if (foreignUnread.length > 0 && activeTab !== 'chat') {
+        if (foreignUnread.length > 0) {
             var maxForeignId = Math.max.apply(Math, foreignUnread.map(function(m) { return m.id; }));
             if (maxForeignId > lastSeenMessageId) {
                 playNotificationSound();
@@ -2202,7 +2555,10 @@
                     }
                 }
 
-                lastSeenMessageId = maxIdInList; 
+                lastSeenMessageId = maxIdInList;
+                if (activeTab === 'chat') {
+                    localStorage.setItem('wms_last_msg_id', maxIdInList);
+                }
             }
         }
 
@@ -2223,18 +2579,31 @@
             var dateStr = dateObj.toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit' });
             var timeStr = dateObj.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
             var isOwn = (msg.trigger_by === currentPicker);
+            var isUrgentCancel = (msg.target_role || '').startsWith('Отмена для:');
+            var isReachReq = (msg.target_role === 'Запрос карщику');
             
             var isRead = isOwn || (msg.id <= storedReadId);
-            var opacityStyle = isRead ? 'opacity: 0.75;' : 'border-right: 3px solid #007aff; font-weight: 500;';
-            var borderLeftStyle = isOwn ? 'border-left: 4px solid #34c759; background: #f2fbf4;' : 'border-left: 4px solid #8e8e93;';
-            var roleLabel = isOwn ? '<span style="color:#248a3d; font-weight:bold;">📋 Мой отбор</span>' : '<span style="color:#5856d6;">' + msg.target_role + '</span>';
+            var opacityStyle = isRead ? 'opacity: 0.78;' : 'border-right: 3px solid #007aff; font-weight: 500;';
+            
+            var borderLeftStyle = 'border-left: 4px solid #8e8e93;';
+            if (isOwn) {
+                borderLeftStyle = 'border-left: 4px solid #34c759; background: #f2fbf4;';
+            } else if (isUrgentCancel) {
+                borderLeftStyle = 'border-left: 4px solid #ff3b30; background: #fef2f2;';
+            } else if (isReachReq) {
+                borderLeftStyle = 'border-left: 4px solid #f59e0b; background: #fffbeb;';
+            }
+
+            var roleLabel = isOwn 
+                ? '<span style="color:#248a3d; font-weight:bold;">📋 Мое действие</span>' 
+                : '<span style="color:#5856d6;">' + escapeHtml(msg.target_role) + '</span>';
 
             container.innerHTML += '<div class="result-card" style="margin-top: 0; padding: 10px; ' + borderLeftStyle + ' ' + opacityStyle + '">' +
                 '<div style="display: flex; justify-content: space-between; font-size: 11px; color: #8e8e93; margin-bottom: 4px;">' +
-                    '<span>⏱️ ' + dateStr + ' ' + timeStr + ' | От: ' + msg.trigger_by + '</span>' +
+                    '<span>⏱️ ' + dateStr + ' ' + timeStr + ' | От: ' + escapeHtml(msg.trigger_by) + '</span>' +
                     roleLabel +
                 '</div>' +
-                '<div style="font-size: 14px; color: #1c1c1e;">' + msg.text + '</div>' +
+                '<div style="font-size: 14px; color: #1c1c1e;">' + escapeHtml(msg.text) + '</div>' +
             '</div>';
         });
     }
@@ -2307,7 +2676,7 @@
     }
 
     function getChatTimeLimitIso() {
-        if (currentRole === 'Кладовщик') {
+        if (currentRole === 'Кладовщик' || currentRole === 'Карщик') {
             const startOfDay = new Date();
             startOfDay.setHours(0, 0, 0, 0);
             return startOfDay.toISOString();
@@ -2315,6 +2684,7 @@
         // Для Оператора и ЗавСклада — последние 72 часа (захватывает выходные)
         return new Date(Date.now() - 72 * 60 * 60 * 1000).toISOString();
     }
+
 
 // === ЛОГИКА УСТАНОВКИ PWA ПРИЛОЖЕНИЯ ===
 let deferredPrompt;
