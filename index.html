@@ -64,7 +64,7 @@
         .analog-meta { font-size: 12px; color: #636366; padding-top: 4px; margin-top: 4px; }
         
         .error { color: #ff3b30; background: #ffe5e5; padding: 12px; border-radius: 8px; margin-top: 15px; display: none; text-align: center; font-size: 14px; }
-        .version-tag { text-align: center; font-size: 12px; color: #636366; margin-top: 25px; font-weight: 600; letter-spacing: 0.5px; text-transform: lowercase; }
+        .version-tag { display: block; width: 100%; border: none; background: transparent; text-align: center; font-size: 12px; color: #636366; margin-top: 25px; font-weight: 600; letter-spacing: 0.5px; text-transform: lowercase; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; touch-action: manipulation; cursor: pointer; padding: 8px; border-radius: 6px; transition: background-color 0.2s; }
         .version-tag:active { background-color: #f2f2f7; }
         .changelog-drawer { display: none; margin-top: 12px; padding: 14px; background: #f8f9fa; border: 1px solid #e5e5ea; border-radius: 10px; max-height: 360px; overflow-y: auto; text-align: left; }
         .changelog-item { padding-bottom: 10px; margin-bottom: 10px; border-bottom: 1px dashed #d1d1d6; font-size: 12px; line-height: 1.4; }
@@ -222,7 +222,7 @@
 
     </div> <!-- Конец #authorizedWorkspace -->
 
-    <div id="versionTagBtn" class="version-tag">сборка: 1.7.3 (4-Tap Changelog Trigger)</div>
+    <button type="button" id="versionTagBtn" class="version-tag">сборка: 1.7.4 (Mobile Button 4-Tap Fix)</button>
     <div id="changelogDrawer" class="changelog-drawer">
         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; padding-bottom: 6px; border-bottom: 1px solid #e5e5ea;">
             <strong style="font-size: 13px; color: #1c1c1e;">📜 История развития проекта</strong>
@@ -2854,12 +2854,15 @@ function showChangelogDrawer() {
 
     btn.addEventListener('click', (e) => {
         e.preventDefault();
+        if (window.getSelection) {
+            try { window.getSelection().removeAllRanges(); } catch (_) {}
+        }
         tapCount++;
 
         if (resetTimer) clearTimeout(resetTimer);
         resetTimer = setTimeout(() => {
             tapCount = 0;
-        }, 1500);
+        }, 2000);
 
         if (tapCount >= 4) {
             tapCount = 0;
