@@ -222,7 +222,7 @@
 
     </div> <!-- Конец #authorizedWorkspace -->
 
-    <div id="versionTagBtn" class="version-tag">сборка: 1.7.2 (Project Changelog Drawer & iOS Stability)</div>
+    <div id="versionTagBtn" class="version-tag">сборка: 1.7.3 (4-Tap Changelog Trigger)</div>
     <div id="changelogDrawer" class="changelog-drawer">
         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; padding-bottom: 6px; border-bottom: 1px solid #e5e5ea;">
             <strong style="font-size: 13px; color: #1c1c1e;">📜 История развития проекта</strong>
@@ -2846,34 +2846,27 @@ function showChangelogDrawer() {
     drawer.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
 }
 
-(function initVersionLongPress() {
+(function initVersionQuadTap() {
     const btn = document.getElementById('versionTagBtn');
     if (!btn) return;
-    let pressTimer = null;
+    let tapCount = 0;
+    let resetTimer = null;
 
-    const startPress = () => {
-        if (pressTimer) clearTimeout(pressTimer);
-        pressTimer = setTimeout(() => {
+    btn.addEventListener('click', (e) => {
+        e.preventDefault();
+        tapCount++;
+
+        if (resetTimer) clearTimeout(resetTimer);
+        resetTimer = setTimeout(() => {
+            tapCount = 0;
+        }, 1500);
+
+        if (tapCount >= 4) {
+            tapCount = 0;
+            clearTimeout(resetTimer);
             showChangelogDrawer();
-            pressTimer = null;
-        }, 5000);
-    };
-
-    const cancelPress = () => {
-        if (pressTimer) {
-            clearTimeout(pressTimer);
-            pressTimer = null;
         }
-    };
-
-    btn.addEventListener('touchstart', startPress, { passive: true });
-    btn.addEventListener('touchend', cancelPress);
-    btn.addEventListener('touchcancel', cancelPress);
-    btn.addEventListener('touchmove', cancelPress, { passive: true });
-
-    btn.addEventListener('mousedown', startPress);
-    btn.addEventListener('mouseup', cancelPress);
-    btn.addEventListener('mouseleave', cancelPress);
+    });
 })();
 </script>
 </body>
