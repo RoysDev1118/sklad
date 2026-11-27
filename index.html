@@ -6,6 +6,7 @@
     <title>Складской поиск + Native Сканер</title>
     <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/davidshimjs-qrcodejs@0.0.2/qrcode.min.js"></script>
+	<script src="changelog.js"></script>
 <!-- Связь с манифестом PWA -->
 <link rel="manifest" href="manifest.json">
 <!-- Цвет статус-бара на iOS -->
@@ -64,6 +65,10 @@
         
         .error { color: #ff3b30; background: #ffe5e5; padding: 12px; border-radius: 8px; margin-top: 15px; display: none; text-align: center; font-size: 14px; }
         .version-tag { text-align: center; font-size: 12px; color: #636366; margin-top: 25px; font-weight: 600; letter-spacing: 0.5px; text-transform: lowercase; }
+        .version-tag:active { background-color: #f2f2f7; }
+        .changelog-drawer { display: none; margin-top: 12px; padding: 14px; background: #f8f9fa; border: 1px solid #e5e5ea; border-radius: 10px; max-height: 360px; overflow-y: auto; text-align: left; }
+        .changelog-item { padding-bottom: 10px; margin-bottom: 10px; border-bottom: 1px dashed #d1d1d6; font-size: 12px; line-height: 1.4; }
+        .changelog-item:last-child { border-bottom: none; margin-bottom: 0; padding-bottom: 0; }
     </style>
 </head>
 <body>
@@ -217,7 +222,14 @@
 
     </div> <!-- Конец #authorizedWorkspace -->
 
-<div class="version-tag">сборка: 1.7.1 (iOS Camera Stability, Network Timeout & Case-Insensitive Invite)</div>
+    <div id="versionTagBtn" class="version-tag">сборка: 1.7.2 (Project Changelog Drawer & iOS Stability)</div>
+    <div id="changelogDrawer" class="changelog-drawer">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; padding-bottom: 6px; border-bottom: 1px solid #e5e5ea;">
+            <strong style="font-size: 13px; color: #1c1c1e;">📜 История развития проекта</strong>
+            <button onclick="hideChangelogDrawer()" style="background: #e5e5ea; border: none; border-radius: 6px; padding: 4px 8px; font-size: 11px; font-weight: bold; color: #3a3a3c; cursor: pointer;">Скрыть</button>
+        </div>
+        <div id="changelogList"></div>
+    </div>
 </div>
 <!-- МОДАЛЬНОЕ ОКНО ВЫБОРА СПОСОБА ОТБОРА С 2+ ЯРУСА -->
 <div id="reachChoiceModal" style="display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.55); z-index: 9999; align-items: center; justify-content: center; padding: 15px;">
@@ -1202,6 +1214,7 @@ if (currentPicker && (currentRole === "Кладовщик" || currentRole === "�
     }
 
     async function searchAddress() {
+       hideChangelogDrawer();
         let inputValue = document.getElementById('addressInput').value.trim();
         
         document.getElementById('addressHeader').style.display = 'none';
@@ -2426,6 +2439,7 @@ if (currentPicker && (currentRole === "Кладовщик" || currentRole === "�
 
     // ПЕРЕКЛЮЧЕНИЕ ВКЛАДОК (SPA Логика: Поиск / Чат / Настройки)
     function switchTab(tabName) {
+       	hideChangelogDrawer();
         activeTab = tabName;
         const searchBtn = document.getElementById('tabSearchBtn');
         const chatBtn = document.getElementById('tabChatBtn');
@@ -2798,7 +2812,69 @@ if ('serviceWorker' in navigator) {
         }
     });
 }
+// === ПАСХАЛКА: ИСТОРИЯ РАЗВИТИЯ ПРОЕКТА ПО 5-СЕКУНДНОМУ УДЕРЖАНИЮ ===
+function hideChangelogDrawer() {
+    const drawer = document.getElementById('changelogDrawer');
+    if (drawer && drawer.style.display !== 'none') {
+        drawer.style.display = 'none';
+    }
+}
 
+function showChangelogDrawer() {
+    const drawer = document.getElementById('changelogDrawer');
+    const listEl = document.getElementById('changelogList');
+    if (!drawer || !listEl) return;
+
+    const items = Array.isArray(window.APP_CHANGELOG) ? window.APP_CHANGELOG : [];
+    if (items.length === 0) {
+        listEl.innerHTML = '<div style="color:#8e8e93; font-size:12px;">Список версий не загружен.</div>';
+    } else {
+        listEl.innerHTML = items.map(item => `
+            <div class="changelog-item">
+                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:2px;">
+                    <strong style="color:#007aff; font-size:13px;">v${escapeHtml(item.ver)}</strong>
+                    <span style="color:#8e8e93; font-size:11px;">${escapeHtml(item.date)}</span>
+                </div>
+                <div style="font-weight:600; color:#1c1c1e; margin-bottom:2px;">${escapeHtml(item.title)}</div>
+                <div style="color:#3a3a3c;">${escapeHtml(item.desc)}</div>
+            </div>
+        `).join('');
+    }
+
+    drawer.style.display = 'block';
+    triggerVibration(60);
+    drawer.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+}
+
+(function initVersionLongPress() {
+    const btn = document.getElementById('versionTagBtn');
+    if (!btn) return;
+    let pressTimer = null;
+
+    const startPress = () => {
+        if (pressTimer) clearTimeout(pressTimer);
+        pressTimer = setTimeout(() => {
+            showChangelogDrawer();
+            pressTimer = null;
+        }, 5000);
+    };
+
+    const cancelPress = () => {
+        if (pressTimer) {
+            clearTimeout(pressTimer);
+            pressTimer = null;
+        }
+    };
+
+    btn.addEventListener('touchstart', startPress, { passive: true });
+    btn.addEventListener('touchend', cancelPress);
+    btn.addEventListener('touchcancel', cancelPress);
+    btn.addEventListener('touchmove', cancelPress, { passive: true });
+
+    btn.addEventListener('mousedown', startPress);
+    btn.addEventListener('mouseup', cancelPress);
+    btn.addEventListener('mouseleave', cancelPress);
+})();
 </script>
 </body>
 </html>
