@@ -217,7 +217,7 @@
 
     </div> <!-- Конец #authorizedWorkspace -->
 
-<div class="version-tag">сборка: 1.7.0 (Reach Truck Role, High-Tier Delegation & Cancel Alerts)</div>
+<div class="version-tag">сборка: 1.7.1 (iOS Camera Stability, Network Timeout & Case-Insensitive Invite)</div>
 </div>
 <!-- МОДАЛЬНОЕ ОКНО ВЫБОРА СПОСОБА ОТБОРА С 2+ ЯРУСА -->
 <div id="reachChoiceModal" style="display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.55); z-index: 9999; align-items: center; justify-content: center; padding: 15px;">
@@ -247,6 +247,7 @@
     let isClaimProcessing = false;
     let isDemoMode = false;
     let guestVideoStream = null;
+    let isCameraStarting = false;
 
     function isQualityFilterEnabled() {
         const toggle = document.getElementById('showDefectQuarantineToggle');
@@ -385,14 +386,26 @@
             alert(isDesktop ? "Компьютер переведен в режим просмотра." : "Устройство успешно переведено в режим просмотра.");
         }
     }
-    // ИНИЦИАЛИЗАЦИЯ СТРАНИЦЫ: ЗАГРУЗКА МЕТАДАННЫХ И СТАТУСА СОТРУДНИКА
+    // Вспомогательный fetch с таймаутом (чтобы на плохом LTE не зависал весь интерфейс)
+    async function fetchWithTimeout(url, options = {}, timeoutMs = 8000) {
+        const controller = new AbortController();
+        const timerId = setTimeout(() => controller.abort(), timeoutMs);
+        try {
+            return await fetch(url, { ...options, signal: controller.signal });
+        } finally {
+            clearTimeout(timerId);
+        }
+    }
+
+    // ИНИЦИАЛИЗАЦИЯ СТРАНИЦЫ: ПАРАЛЛЕЛЬНАЯ ЗАГРУЗКА МЕТАДАННЫХ И АВТОРИЗАЦИИ
     window.addEventListener('DOMContentLoaded', async () => {
         const qualityToggle = document.getElementById('showDefectQuarantineToggle');
         if (qualityToggle) qualityToggle.checked = false;
         const indicator = document.getElementById('qualityModeIndicator');
         if (indicator) indicator.style.display = 'none';
 
-        await loadMetaSyncData();
+        // Запускаем независимо: зависание метаданных больше не блокирует вход и инвайт
+        loadMetaSyncData();
         await checkDeviceAuthorization();
     });
 
@@ -400,9 +413,9 @@
     async function loadMetaSyncData() {
         const metaBar = document.getElementById('metaSyncBar');
         try {
-            const response = await fetch(`${SUPABASE_URL}/rest/v1/sync_meta?id=eq.1`, {
+            const response = await fetchWithTimeout(`${SUPABASE_URL}/rest/v1/sync_meta?id=eq.1`, {
                 headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}` }
-            });
+            }, 8000);
             const data = await response.json();
             if (data && data.length > 0) {
                 const meta = data[0];
@@ -441,9 +454,9 @@
         }
 
         try {
-            const response = await fetch(`${SUPABASE_URL}/rest/v1/allowed_pickers?device_token=eq.${encodeURIComponent(savedToken)}&is_active=eq.true`, {
+            const response = await fetchWithTimeout(`${SUPABASE_URL}/rest/v1/allowed_pickers?device_token=eq.${encodeURIComponent(savedToken)}&is_active=eq.true`, {
                 headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}` }
-            });
+            }, 8000);
             const data = await response.json();
 
             if (data && data.length > 0) {
@@ -467,9 +480,9 @@
     async function tryActivateDemoInvite(inviteCode) {
         try {
             const fullQrCode = inviteCode.toLowerCase().startsWith('demo:') ? inviteCode : `demo:${inviteCode}`;
-            const response = await fetch(`${SUPABASE_URL}/rest/v1/allowed_pickers?qr_code=eq.${encodeURIComponent(fullQrCode)}&is_active=eq.true`, {
+            const response = await fetchWithTimeout(`${SUPABASE_URL}/rest/v1/allowed_pickers?qr_code=ilike.${encodeURIComponent(fullQrCode)}&is_active=eq.true`, {
                 headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}` }
-            });
+            }, 8000);
             const data = await response.json();
 
             if (data && data.length > 0) {
@@ -688,31 +701,51 @@ if (currentPicker && (currentRole === "Кладовщик" || currentRole === "�
         searchAddress();
     }
 
+    function createSafeBarcodeDetector() {
+        if (typeof window.BarcodeDetector === 'undefined') return null;
+        try {
+            return new window.BarcodeDetector({ formats: ['qr_code'] });
+        } catch (e) {
+            console.warn("BarcodeDetector не поддерживается, используем jsQR:", e);
+            return null;
+        }
+    }
+
     // УМНЫЙ СКАНЕР КАМЕРЫ С ИНТЕГРАЦИЕЙ СИТА МУСОРА И ДВЕРИ
     async function toggleScanner() {
+        if (isCameraStarting) return;
         const videoContainer = document.getElementById('videoContainer');
         const video = document.getElementById('webcamVideo');
         const btn = document.getElementById('toggleScanBtn');
         document.getElementById('errorBlock').style.display = 'none';
 
         if (!videoStream) {
+            isCameraStarting = true;
             try {
                 videoContainer.style.display = 'block';
-                btn.innerText = "🛑 Остановить сканер";
-                btn.style.backgroundColor = "#ff3b30";
+                btn.innerText = "⏳ Запуск камеры...";
+                btn.style.backgroundColor = "#8e8e93";
+
+                video.setAttribute('playsinline', '');
+                video.setAttribute('autoplay', '');
+                video.muted = true;
 
                 videoStream = await navigator.mediaDevices.getUserMedia({
-                    video: { facingMode: "environment" },
+                    video: { facingMode: { ideal: "environment" } },
                     audio: false
                 });
 
                 video.srcObject = videoStream;
                 await video.play();
+                btn.innerText = "🛑 Остановить сканер";
+                btn.style.backgroundColor = "#ff3b30";
                 startQrDetectionLoop(video);
             } catch (err) {
                 showError("Не удалось получить доступ к камере: " + err.message);
                 playErrorBeep();
                 stopCamera();
+            } finally {
+                isCameraStarting = false;
             }
         } else {
             stopCamera();
@@ -720,17 +753,20 @@ if (currentPicker && (currentRole === "Кладовщик" || currentRole === "�
     }
 
     function startQrDetectionLoop(video) {
-        const useDetector = window.BarcodeDetector !== undefined;
-        let detector = useDetector ? new BarcodeDetector({ formats: ['qr_code'] }) : null;
+        let detector = createSafeBarcodeDetector();
+        const canvas = document.createElement('canvas');
+        const ctx = canvas.getContext('2d', { willReadFrequently: true });
 
         const loop = () => {
-            if (!video || video.readyState !== video.HAVE_ENOUGH_DATA) {
+            if (!videoStream) return;
+            if (!video || video.readyState < 2 || video.videoWidth === 0 || video.videoHeight === 0) {
                 requestAnimationFrame(loop);
                 return;
             }
 
             if (detector) {
                 detector.detect(video).then(barcodes => {
+                    if (!videoStream) return;
                     if (barcodes.length > 0) {
                         handleFoundQr(barcodes[0].rawValue.trim());
                         stopCamera();
@@ -745,10 +781,8 @@ if (currentPicker && (currentRole === "Кладовщик" || currentRole === "�
                 return;
             }
 
-            const canvas = document.createElement('canvas');
             canvas.width = video.videoWidth;
             canvas.height = video.videoHeight;
-            const ctx = canvas.getContext('2d');
             ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
             const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
 
@@ -1037,6 +1071,7 @@ if (currentPicker && (currentRole === "Кладовщик" || currentRole === "�
         }
     }
     async function toggleGuestScanner() {
+        if (isCameraStarting) return;
         const videoContainer = document.getElementById('guestVideoContainer');
         const video = document.getElementById('guestWebcamVideo');
         const btn = document.getElementById('guestScanBtn');
@@ -1044,17 +1079,24 @@ if (currentPicker && (currentRole === "Кладовщик" || currentRole === "�
         if (errBlock) errBlock.style.display = 'none';
 
         if (!guestVideoStream) {
+            isCameraStarting = true;
             try {
                 videoContainer.style.display = 'block';
-                btn.innerText = "🛑 Остановить сканер";
-                btn.style.backgroundColor = "#ff3b30";
+                btn.innerText = "⏳ Запуск камеры...";
+                btn.style.backgroundColor = "#8e8e93";
+
+                video.setAttribute('playsinline', '');
+                video.setAttribute('autoplay', '');
+                video.muted = true;
 
                 guestVideoStream = await navigator.mediaDevices.getUserMedia({
-                    video: { facingMode: "environment" },
+                    video: { facingMode: { ideal: "environment" } },
                     audio: false
                 });
                 video.srcObject = guestVideoStream;
                 await video.play();
+                btn.innerText = "🛑 Остановить сканер";
+                btn.style.backgroundColor = "#ff3b30";
                 startGuestQrLoop(video);
             } catch (err) {
                 if (errBlock) {
@@ -1063,6 +1105,8 @@ if (currentPicker && (currentRole === "Кладовщик" || currentRole === "�
                 }
                 playErrorBeep();
                 stopGuestCamera();
+            } finally {
+                isCameraStarting = false;
             }
         } else {
             stopGuestCamera();
@@ -1070,12 +1114,13 @@ if (currentPicker && (currentRole === "Кладовщик" || currentRole === "�
     }
 
     function startGuestQrLoop(video) {
-        const useDetector = window.BarcodeDetector !== undefined;
-        let detector = useDetector ? new BarcodeDetector({ formats: ['qr_code'] }) : null;
+        let detector = createSafeBarcodeDetector();
+        const canvas = document.createElement('canvas');
+        const ctx = canvas.getContext('2d', { willReadFrequently: true });
 
         const loop = () => {
             if (!guestVideoStream) return;
-            if (!video || video.readyState !== video.HAVE_ENOUGH_DATA) {
+            if (!video || video.readyState < 2 || video.videoWidth === 0 || video.videoHeight === 0) {
                 requestAnimationFrame(loop);
                 return;
             }
@@ -1098,6 +1143,7 @@ if (currentPicker && (currentRole === "Кладовщик" || currentRole === "�
 
             if (detector) {
                 detector.detect(video).then(barcodes => {
+                    if (!guestVideoStream) return;
                     if (barcodes.length > 0) {
                         processCode(barcodes[0].rawValue.trim());
                         return;
@@ -1110,10 +1156,8 @@ if (currentPicker && (currentRole === "Кладовщик" || currentRole === "�
                 return;
             }
 
-            const canvas = document.createElement('canvas');
             canvas.width = video.videoWidth;
             canvas.height = video.videoHeight;
-            const ctx = canvas.getContext('2d');
             ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
             const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
             const code = jsQR(imageData.data, canvas.width, canvas.height);
@@ -2731,6 +2775,8 @@ window.addEventListener('appinstalled', (evt) => {
 
 // 4. Регистрация Service Worker с автообновлением при выходе новой сборки
 if ('serviceWorker' in navigator) {
+    const hadController = Boolean(navigator.serviceWorker.controller);
+
     window.addEventListener('load', () => {
         navigator.serviceWorker.register('sw.js')
             .then(reg => {
@@ -2742,6 +2788,10 @@ if ('serviceWorker' in navigator) {
 
     let refreshing = false;
     navigator.serviceWorker.addEventListener('controllerchange', () => {
+        // Не перезагружаем страницу при самой первой регистрации SW или если сейчас открыта камера
+        if (!hadController || videoStream || guestVideoStream) {
+            return;
+        }
         if (!refreshing) {
             refreshing = true;
             window.location.reload();
